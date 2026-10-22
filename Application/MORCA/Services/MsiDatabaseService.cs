@@ -257,8 +257,6 @@ public class MsiDatabaseService : IDisposable
     {
         if (_database == null) throw new InvalidOperationException("No database open");
 
-        var info = _database.SummaryInfo;
-
         // InstallerException usually has no message, so say which step failed.
         static void Step(string what, Action action)
         {
@@ -282,18 +280,32 @@ public class MsiDatabaseService : IDisposable
             (model.AdministrativeImage ? 4 : 0) |
             (model.UacCompliant ? 8 : 0);
 
-        Step("Title", () => info.Title = model.Title);
-        Step("Author", () => info.Author = model.Author);
-        Step("Subject", () => info.Subject = model.Subject);
-        Step("Comments", () => info.Comments = model.Comments);
-        Step("Keywords", () => info.Keywords = model.Keywords);
-        Step("Template", () => info.Template = template);
-        Step("Package Code", () => info.RevisionNumber = model.PackageCode);
-        Step("Schema", () => info.PageCount = model.Schema);
-        Step("Security", () => info.Security = model.Security);
-        Step("Source image flags", () => info.WordCount = wordCount);
-        Step("Persist", () => info.Persist());
-        Step("Commit", () => _database.Commit());
+        // The summary information handle that Database.SummaryInfo returns is read-only, so
+        // release the database and open a writable one on the working file instead.
+        _database.Commit();
+        _database.Close();
+        _database.Dispose();
+        try
+        {
+            using var info = new SummaryInfo(_workingPath!, true);
+
+            Step("Title", () => info.Title = model.Title);
+            Step("Author", () => info.Author = model.Author);
+            Step("Subject", () => info.Subject = model.Subject);
+            Step("Comments", () => info.Comments = model.Comments);
+            Step("Keywords", () => info.Keywords = model.Keywords);
+            Step("Template", () => info.Template = template);
+            Step("Package Code", () => info.RevisionNumber = model.PackageCode);
+            Step("Schema", () => info.PageCount = model.Schema);
+            Step("Security", () => info.Security = model.Security);
+            Step("Source image flags", () => info.WordCount = wordCount);
+            Step("Persist", () => info.Persist());
+        }
+        finally
+        {
+            _database = new Database(_workingPath!, DatabaseOpenMode.Direct);
+        }
+
         MarkDirty();
     }
 
