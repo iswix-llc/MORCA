@@ -15,6 +15,17 @@ public class MsiDatabaseService : IDisposable
     /// <summary>Path of the saved file, or null while the database is untitled.</summary>
     public string? FilePath => _filePath;
     public bool IsOpen => _database != null;
+
+    /// <summary>True when there are changes that have not been saved.</summary>
+    public bool IsDirty { get; private set; }
+
+    /// <summary>Call after any change to the database (row insert/update/delete, table import, ...).</summary>
+    public void MarkDirty()
+    {
+        if (_database == null || IsDirty) return;
+        IsDirty = true;
+        StateChanged?.Invoke();
+    }
     public bool IsUntitled => _database != null && _filePath == null;
     public string DisplayName => _filePath != null ? Path.GetFileName(_filePath) : "Untitled";
     public string SuggestedFileName => IsUntitled ? "Untitled.msi" : Path.GetFileName(_filePath!);
@@ -33,6 +44,7 @@ public class MsiDatabaseService : IDisposable
         _database = new Database(path, mode);
         _readOnly = readOnly;
         _filePath = path;
+        IsDirty = false;
         StateChanged?.Invoke();
     }
 
@@ -53,6 +65,7 @@ public class MsiDatabaseService : IDisposable
         _database = new Database(_tempPath, DatabaseOpenMode.Direct);
         _readOnly = false;
         _filePath = null;
+        IsDirty = false;
         StateChanged?.Invoke();
     }
 
@@ -61,6 +74,12 @@ public class MsiDatabaseService : IDisposable
     {
         if (_database == null) throw new InvalidOperationException("No database open");
         if (!_readOnly) _database.Commit();
+
+        if (IsDirty)
+        {
+            IsDirty = false;
+            StateChanged?.Invoke();
+        }
     }
 
     /// <summary>
@@ -99,6 +118,7 @@ public class MsiDatabaseService : IDisposable
         _readOnly = false;
         _filePath = newPath;
         _tempPath = null;
+        IsDirty = false;
 
         DeleteQuietly(oldTemp);
         StateChanged?.Invoke();
@@ -234,6 +254,7 @@ public class MsiDatabaseService : IDisposable
         _database.Dispose();
         _database = null;
         _filePath = null;
+        IsDirty = false;
 
         DeleteQuietly(_tempPath);
         _tempPath = null;

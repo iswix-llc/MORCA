@@ -3,6 +3,7 @@
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
 <MudThemeProvider />
@@ -18,7 +19,7 @@
         @if (MsiService.IsOpen)
         {
             <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
-                📦 @MsiService.DisplayName
+                📦 @MsiService.DisplayName@(MsiService.IsDirty ? "*" : "")
             </MudText>
         }
         
@@ -67,6 +68,8 @@
 
     private async Task OpenMsiFile()
     {
+        if (!await ConfirmDiscardChangesAsync()) return;
+
         try
         {
             var result = await FilePicker.Default.PickAsync(new PickOptions
@@ -90,8 +93,10 @@
         }
     }
 
-    private void NewMsiFile()
+    private async Task NewMsiFile()
     {
+        if (!await ConfirmDiscardChangesAsync()) return;
+
         try
         {
             MsiService.CreateUntitled();
@@ -146,7 +151,33 @@
         }
     }
 
-    private void CloseMsiFile() => MsiService.Close();
+    private async Task CloseMsiFile()
+    {
+        if (await ConfirmDiscardChangesAsync())
+            MsiService.Close();
+    }
+
+    /// <summary>
+    /// If there are unsaved changes, asks whether to save them. Returns true when it is safe to
+    /// replace or close the current database (nothing unsaved, saved, or the user chose Don't Save).
+    /// </summary>
+    private async Task<bool> ConfirmDiscardChangesAsync()
+    {
+        if (!MsiService.IsDirty) return true;
+
+        var answer = await DialogService.ShowMessageBoxAsync(
+            "Unsaved changes",
+            $"Save changes to {MsiService.DisplayName}?",
+            yesText: "Save",
+            noText: "Don't Save",
+            cancelText: "Cancel");
+
+        if (answer is null) return false;          // Cancel
+        if (answer == false) return true;          // Don't Save
+
+        await SaveMsiFile();
+        return !MsiService.IsDirty;                // false if the Save As dialog was cancelled or failed
+    }
 
     public void Dispose() => MsiService.StateChanged -= OnMsiStateChanged;
 }
