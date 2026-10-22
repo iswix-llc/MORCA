@@ -115,7 +115,7 @@ public class MsiDatabaseService : IDisposable
     {
         if (_database == null) throw new InvalidOperationException("No database open");
 
-        _database.Commit();
+        if (IsDirty) _database.Commit();
         _database.Close();
         _database.Dispose();
         try
@@ -143,8 +143,8 @@ public class MsiDatabaseService : IDisposable
 
     private void CopyWorkingTo(string destination)
     {
-        _database!.Commit();
-        _database.Close();
+        if (IsDirty) _database!.Commit();
+        _database!.Close();
         _database.Dispose();
         try
         {
