@@ -1,5 +1,4 @@
 using IsWiX.WindowsInstaller;
-using OpenDatabaseMode = IsWiX.WindowsInstaller.OpenDatabase;
 
 namespace MORCA.Services;
 
@@ -22,7 +21,7 @@ public class MsiDatabaseService : IDisposable
         _database?.Close();
         _database?.Dispose();
         
-        var mode = readOnly ? OpenDatabaseMode.ReadOnly : OpenDatabaseMode.Direct;
+        var mode = readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct;
         _database = new Database(path, mode);
         _filePath = path;
     }
