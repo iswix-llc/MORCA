@@ -153,11 +153,36 @@ public class MsiDatabaseService : IDisposable
             // If _Tables doesn't exist, try to get table names another way
         }
         
+        // _Validation is expected in every MSI but isn't required, and _Tables may not list it,
+        // so look for it directly. It is only shown when the database actually has it.
+        if (!tables.Contains("_Validation", StringComparer.OrdinalIgnoreCase) && TableExists("_Validation"))
+            tables.Add("_Validation");
+
         // Regular tables first, then any other underscore (system) tables, with _Validation always last.
         return tables
             .OrderBy(t => t.Equals("_Validation", StringComparison.OrdinalIgnoreCase) ? 2 : t.StartsWith('_') ? 1 : 0)
             .ThenBy(t => t, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>True if the table has any column definitions in the database's _Columns table.</summary>
+    private bool TableExists(string tableName)
+    {
+        if (_database == null) return false;
+
+        try
+        {
+            using var view = _database.OpenView($"SELECT `Name` FROM `_Columns` WHERE `Table` = '{tableName}'");
+            view.Execute();
+            foreach (var _ in view)
+                return true;
+        }
+        catch
+        {
+            // treat any failure as "not there"
+        }
+
+        return false;
     }
 
     /// <summary>
