@@ -23,9 +23,7 @@
 
                 .tables-panel {
                     flex: 0 0 auto;
-                    width: max-content;
                     min-width: 160px;
-                    max-width: 50vw;
                     display: flex;
                     flex-direction: column;
                     overflow: hidden;
@@ -71,7 +69,7 @@
         </style>
 
         <div class="editor-container">
-            <div class="tables-panel">
+            <div class="tables-panel" style="width: @TablesPanelWidth">
                 <MudText Typo="Typo.subtitle2" Class="tables-title">
                     <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
                     Tables
@@ -161,6 +159,11 @@
     private List<string>? _tables;
     private string? _selectedTable;
     private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
+
+    // Width sized to the longest table name (names render uppercase, ~1.1ch per char) plus
+    // room for the list padding, button padding and icon.
+    private string TablesPanelWidth =>
+        $"calc({(_tables is { Count: > 0 } ? _tables.Max(t => t.Length) : 15) * 1.1:0.#}ch + 100px)";
 
     protected override void OnInitialized()
     {
