@@ -1,0 +1,68 @@
+@page "/msi-features"
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
+
+<PageTitle>Features - MORCA</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Features</MudText>
+
+@if (!MsiService.IsOpen)
+{
+    <MudAlert Severity="Severity.Warning">
+        No MSI file is open. Click <strong>Open MSI</strong> in the top menu.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.body2" Class="mb-4">Features defined in this MSI.</MudText>
+        
+        @if (_features != null)
+        {
+            @if (_features.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No features found.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_features" Hover="true" Dense="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Feature</MudTh>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Level</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Feature">@context["Feature"]</MudTd>
+                        <MudTd DataLabel="Title">@context["Title"]</MudTd>
+                        <MudTd DataLabel="Level">@context["Level"]</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        }
+    </MudPaper>
+}
+
+@code {
+    private List<Dictionary<string, object?>>? _features;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (MsiService.IsOpen)
+        {
+            try
+            {
+                _features = MsiService.GetTableRows("Feature");
+            }
+            catch
+            {
+                _features = new List<Dictionary<string, object?>>();
+            }
+        }
+
+        await Task.CompletedTask;
+    }
+}

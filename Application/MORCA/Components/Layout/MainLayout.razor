@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -9,8 +11,30 @@
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" aria-label="Toggle navigation menu" />
         <MudText Typo="Typo.h6" Class="ml-3">MORCA</MudText>
+        
+        @if (MsiService.IsOpen)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
+                📦 @Path.GetFileName(MsiService.FilePath)
+            </MudText>
+        }
+        
         <MudSpacer />
-        <MudLink Href="https://learn.microsoft.com/aspnet/core/" Target="_blank" Color="Color.Inherit">About</MudLink>
+        
+        @if (!MsiService.IsOpen)
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="OpenMsiFile" Class="mr-2">
+                Open MSI
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Class="mr-2">
+                Close
+            </MudButton>
+        }
+        
+        <MudLink Href="https://learn.microsoft.com/aspnet/core/" Target="_blank" Color="Color.Inherit" Class="mr-4">About</MudLink>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive">
@@ -28,4 +52,36 @@
     private bool _drawerOpen = true;
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private async Task OpenMsiFile()
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Select an MSI file",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.WinUI, new[] { ".msi" } }
+                })
+            });
+
+            if (result != null)
+            {
+                MsiService.Open(result.FullPath, readOnly: true);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
+        }
+    }
+
+    private async Task CloseMsiFile()
+    {
+        MsiService.Close();
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
 }

@@ -1,0 +1,70 @@
+@page "/msi-custom-actions"
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
+
+<PageTitle>Custom Actions - MORCA</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Custom Actions</MudText>
+
+@if (!MsiService.IsOpen)
+{
+    <MudAlert Severity="Severity.Warning">
+        No MSI file is open. Click <strong>Open MSI</strong> in the top menu.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.body2" Class="mb-4">Custom Actions defined in this MSI.</MudText>
+        
+        @if (_customActions != null)
+        {
+            @if (_customActions.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No custom actions found.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_customActions" Hover="true" Dense="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Action</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Source</MudTh>
+                        <MudTh>Target</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Action">@context["Action"]</MudTd>
+                        <MudTd DataLabel="Type">@context["Type"]</MudTd>
+                        <MudTd DataLabel="Source">@context["Source"]</MudTd>
+                        <MudTd DataLabel="Target">@context["Target"]</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        }
+    </MudPaper>
+}
+
+@code {
+    private List<Dictionary<string, object?>>? _customActions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (MsiService.IsOpen)
+        {
+            try
+            {
+                _customActions = MsiService.GetTableRows("CustomAction");
+            }
+            catch
+            {
+                _customActions = new List<Dictionary<string, object?>>();
+            }
+        }
+
+        await Task.CompletedTask;
+    }
+}

@@ -1,3 +1,63 @@
 @page "/"
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
 
-/
+<MudText Typo="Typo.h3" GutterBottom="true">Welcome to MORCA</MudText>
+
+@if (MsiService.IsOpen)
+{
+    <MudAlert Severity="Severity.Success" Class="mb-4">
+        <strong>MSI Loaded:</strong> @Path.GetFileName(MsiService.FilePath)
+    </MudAlert>
+    
+    <MudText Typo="Typo.body1" Class="mb-4">
+        Select a tool from the navigation menu to view or edit the MSI file.
+    </MudText>
+    
+    <MudGrid>
+        <MudItem xs="12" sm="6">
+            <MudCard>
+                <MudCardHeader>
+                    <MudIcon Icon="@Icons.Material.Filled.Edit" />
+                    <MudText Typo="Typo.h6">Table Editor</MudText>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.body2">View and edit MSI tables, rows, and data.</MudText>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="msi-editor">Open</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+        
+        <MudItem xs="12" sm="6">
+            <MudCard>
+                <MudCardHeader>
+                    <MudIcon Icon="@Icons.Material.Filled.Info" />
+                    <MudText Typo="Typo.h6">Summary</MudText>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.body2">View MSI properties and statistics.</MudText>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="msi-summary">Open</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+else
+{
+    <MudText Typo="Typo.body1" GutterBottom="true">
+        A multiplatform editor for Windows Installer (MSI) packages.
+    </MudText>
+    
+    <MudText Typo="Typo.body2" Class="mb-6">
+        Click <strong>Open MSI</strong> in the top menu to get started.
+    </MudText>
+    
+    <MudAlert Severity="Severity.Info">
+        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-2" />
+        MORCA (Multiplatform Orca) brings the power of the Windows Installer table editor to all platforms.
+    </MudAlert>
+}
