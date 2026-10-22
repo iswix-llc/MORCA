@@ -167,6 +167,7 @@ else
         }
         catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine(ex);
             Snackbar.Add($"Could not update summary information: {ex.Message}", Severity.Error);
         }
     }

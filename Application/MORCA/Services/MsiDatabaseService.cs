@@ -259,23 +259,41 @@ public class MsiDatabaseService : IDisposable
 
         var info = _database.SummaryInfo;
 
-        info.Title = model.Title;
-        info.Author = model.Author;
-        info.Subject = model.Subject;
-        info.Comments = model.Comments;
-        info.Keywords = model.Keywords;
-        info.Template = string.IsNullOrEmpty(model.Languages) ? model.Platform : $"{model.Platform};{model.Languages}";
-        info.RevisionNumber = model.PackageCode;
-        info.PageCount = model.Schema;
-        info.Security = model.Security;
-        info.WordCount =
+        // InstallerException usually has no message, so say which step failed.
+        static void Step(string what, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                var code = ex.GetType().GetProperty("ErrorCode")?.GetValue(ex);
+                var detail = string.IsNullOrEmpty(ex.Message) ? "" : $": {ex.Message}";
+                throw new InvalidOperationException(
+                    $"{what} failed ({ex.GetType().Name}{(code != null ? $", error {code}" : "")}){detail}", ex);
+            }
+        }
+
+        var template = string.IsNullOrEmpty(model.Languages) ? model.Platform : $"{model.Platform};{model.Languages}";
+        var wordCount =
             (model.ShortFileNames ? 1 : 0) |
             (model.Compressed ? 2 : 0) |
             (model.AdministrativeImage ? 4 : 0) |
             (model.UacCompliant ? 8 : 0);
 
-        info.Persist();
-        _database.Commit();
+        Step("Title", () => info.Title = model.Title);
+        Step("Author", () => info.Author = model.Author);
+        Step("Subject", () => info.Subject = model.Subject);
+        Step("Comments", () => info.Comments = model.Comments);
+        Step("Keywords", () => info.Keywords = model.Keywords);
+        Step("Template", () => info.Template = template);
+        Step("Package Code", () => info.RevisionNumber = model.PackageCode);
+        Step("Schema", () => info.PageCount = model.Schema);
+        Step("Security", () => info.Security = model.Security);
+        Step("Source image flags", () => info.WordCount = wordCount);
+        Step("Persist", () => info.Persist());
+        Step("Commit", () => _database.Commit());
         MarkDirty();
     }
 
