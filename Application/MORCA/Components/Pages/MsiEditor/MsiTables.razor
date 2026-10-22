@@ -185,6 +185,11 @@
         _selectedTable = null;
         _tableData = null;
         _tables = MsiService.IsOpen ? MsiService.GetTableNames() : null;
+
+        if (_tables is { Count: > 0 })
+        {
+            SelectTable(_tables[0]);
+        }
     }
 
     private void SelectTable(string tableName)

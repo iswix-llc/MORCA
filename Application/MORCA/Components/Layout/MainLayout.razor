@@ -2,6 +2,7 @@
 @implements IDisposable
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
+@inject NavigationManager Navigation
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -67,6 +68,7 @@
             if (result != null)
             {
                 MsiService.Open(result.FullPath, readOnly: true);
+                Navigation.NavigateTo("msi-tables");
             }
         }
         catch (Exception ex)
