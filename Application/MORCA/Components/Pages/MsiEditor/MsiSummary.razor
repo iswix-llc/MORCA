@@ -18,17 +18,22 @@ else
         <MudItem xs="12">
             <MudPaper Class="pa-4">
                 <MudText Typo="Typo.subtitle2" GutterBottom="true">File Information</MudText>
-                <MudList>
-                    <MudListItem>
-                        <strong>Path:</strong> @MsiService.FilePath
-                    </MudListItem>
-                    <MudListItem>
-                        <strong>Size:</strong> @GetFileSize()
-                    </MudListItem>
-                    <MudListItem>
-                        <strong>Tables:</strong> @_tableCount
-                    </MudListItem>
-                </MudList>
+                <MudSimpleTable>
+                    <tbody>
+                        <tr>
+                            <td style="width: 120px; font-weight: bold;">Path:</td>
+                            <td>@MsiService.FilePath</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold;">Size:</td>
+                            <td>@GetFileSize()</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold;">Tables:</td>
+                            <td>@_tableCount</td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
             </MudPaper>
         </MudItem>
         
