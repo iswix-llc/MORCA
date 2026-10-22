@@ -87,7 +87,7 @@
 
             if (result != null)
             {
-                MsiService.Open(result.FullPath, readOnly: true);
+                MsiService.Open(result.FullPath);
                 Navigation.NavigateTo("msi-summaryinformation");
             }
         }
@@ -114,7 +114,7 @@
 
     private async Task SaveMsiFile()
     {
-        if (MsiService.IsUntitled)
+        if (MsiService.IsUntitled || !MsiService.CanSaveInPlace)
         {
             await SaveMsiFileAs();
             return;

@@ -2,6 +2,7 @@
 @using MORCA.Models
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
+@inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>Summary Information - MORCA</PageTitle>
@@ -18,7 +19,7 @@ else if (_error != null)
 {
     <MudAlert Severity="Severity.Error">Could not read summary information: @_error</MudAlert>
 }
-else if (_info == null)
+else if (_form == null)
 {
     <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
 }
@@ -27,23 +28,23 @@ else
     <MudPaper Class="pa-4" Style="max-width: 640px;">
         <MudGrid Spacing="2">
             <MudItem xs="12">
-                <MudTextField T="string" Label="Title" Value="@_info.Title" ReadOnly="true" />
+                <MudTextField T="string" Label="Title" @bind-Value="_form.Title" Immediate="true" />
             </MudItem>
             <MudItem xs="12">
-                <MudTextField T="string" Label="Author" Value="@_info.Author" ReadOnly="true" />
+                <MudTextField T="string" Label="Author" @bind-Value="_form.Author" Immediate="true" />
             </MudItem>
             <MudItem xs="12">
-                <MudTextField T="string" Label="Subject" Value="@_info.Subject" ReadOnly="true" />
+                <MudTextField T="string" Label="Subject" @bind-Value="_form.Subject" Immediate="true" />
             </MudItem>
             <MudItem xs="12">
-                <MudTextField T="string" Label="Comments" Value="@_info.Comments" ReadOnly="true" Lines="3" />
+                <MudTextField T="string" Label="Comments" @bind-Value="_form.Comments" Immediate="true" Lines="3" />
             </MudItem>
             <MudItem xs="12">
-                <MudTextField T="string" Label="Keywords" Value="@_info.Keywords" ReadOnly="true" />
+                <MudTextField T="string" Label="Keywords" @bind-Value="_form.Keywords" Immediate="true" />
             </MudItem>
 
             <MudItem xs="6">
-                <MudSelect T="string" Label="Platform" Value="@_info.Platform" ReadOnly="true">
+                <MudSelect T="string" Label="Platform" @bind-Value="_form.Platform">
                     @foreach (var platform in PlatformOptions)
                     {
                         <MudSelectItem T="string" Value="@platform">@platform</MudSelectItem>
@@ -51,24 +52,27 @@ else
                 </MudSelect>
             </MudItem>
             <MudItem xs="6">
-                <MudTextField T="string" Label="Languages" Value="@_info.Languages" ReadOnly="true" />
+                <MudTextField T="string" Label="Languages" @bind-Value="_form.Languages" Immediate="true" />
             </MudItem>
 
-            <MudItem xs="12">
-                <MudTextField T="string" Label="Package Code" Value="@_info.PackageCode" ReadOnly="true" />
+            <MudItem xs="9">
+                <MudTextField T="string" Label="Package Code" @bind-Value="_form.PackageCode" Immediate="true" />
+            </MudItem>
+            <MudItem xs="3" Class="d-flex align-end">
+                <MudButton Variant="Variant.Outlined" OnClick="NewGuid" FullWidth="true">New GUID</MudButton>
             </MudItem>
 
             <MudItem xs="6">
-                <MudTextField T="int" Label="Schema" Value="@_info.Schema" ReadOnly="true" />
+                <MudTextField T="int" Label="Schema" @bind-Value="_form.Schema" Immediate="true" />
             </MudItem>
             <MudItem xs="6">
-                <MudSelect T="int" Label="Security" Value="@_info.Security" ReadOnly="true">
+                <MudSelect T="int" Label="Security" @bind-Value="_form.Security">
                     <MudSelectItem T="int" Value="0">None</MudSelectItem>
                     <MudSelectItem T="int" Value="2">Read-only recommended</MudSelectItem>
                     <MudSelectItem T="int" Value="4">Read-only enforced</MudSelectItem>
-                    @if (_info.Security is not (0 or 2 or 4))
+                    @if (_form.Security is not (0 or 2 or 4))
                     {
-                        <MudSelectItem T="int" Value="@_info.Security">Unknown (@_info.Security)</MudSelectItem>
+                        <MudSelectItem T="int" Value="@_form.Security">Unknown (@_form.Security)</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
@@ -79,28 +83,36 @@ else
                     <MudText Typo="Typo.caption">File names:</MudText>
                     <MudGrid Spacing="0">
                         <MudItem xs="6">
-                            <MudRadioGroup T="bool" Value="@_info.ShortFileNames" ReadOnly="true">
+                            <MudRadioGroup T="bool" @bind-Value="_form.ShortFileNames">
                                 <MudRadio T="bool" Value="true">Short File Names</MudRadio>
                                 <MudRadio T="bool" Value="false">Long File Names</MudRadio>
                             </MudRadioGroup>
                         </MudItem>
                         <MudItem xs="6">
                             <div class="d-flex flex-column">
-                                <MudCheckBox T="bool" Value="@_info.Compressed" ReadOnly="true" Label="Compressed by Default" />
-                                <MudCheckBox T="bool" Value="@_info.AdministrativeImage" ReadOnly="true" Label="Administrative Image" />
-                                <MudCheckBox T="bool" Value="@_info.UacCompliant" ReadOnly="true" Label="UAC Compliant" />
+                                <MudCheckBox T="bool" @bind-Value="_form.Compressed" Label="Compressed by Default" />
+                                <MudCheckBox T="bool" @bind-Value="_form.AdministrativeImage" Label="Administrative Image" />
+                                <MudCheckBox T="bool" @bind-Value="_form.UacCompliant" Label="UAC Compliant" />
                             </div>
                         </MudItem>
                     </MudGrid>
                 </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" Class="d-flex justify-end">
+                <MudButton Variant="Variant.Text" Class="mr-2" OnClick="Revert" Disabled="@(!HasChanges)">Revert</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Apply" Disabled="@(!HasChanges)">Apply</MudButton>
             </MudItem>
         </MudGrid>
     </MudPaper>
 }
 
 @code {
-    private SummaryInformationModel? _info;
+    private SummaryInformationModel? _info;   // as stored in the database
+    private Form? _form;                      // as currently edited
     private string? _error;
+
+    private bool HasChanges => _form != null && _info != null && _form.ToModel() != _info;
 
     // The platforms Orca offers, plus whatever value is actually in the file.
     private IEnumerable<string> PlatformOptions =>
@@ -126,6 +138,7 @@ else
     private void Load()
     {
         _info = null;
+        _form = null;
         _error = null;
 
         if (!MsiService.IsOpen) return;
@@ -133,6 +146,7 @@ else
         try
         {
             _info = MsiService.GetSummaryInformation();
+            _form = Form.From(_info);
         }
         catch (Exception ex)
         {
@@ -140,5 +154,63 @@ else
         }
     }
 
+    private void NewGuid() => _form!.PackageCode = Guid.NewGuid().ToString("B").ToUpperInvariant();
+
+    private void Revert() => _form = Form.From(_info!);
+
+    private void Apply()
+    {
+        try
+        {
+            MsiService.SetSummaryInformation(_form!.ToModel());
+            Load();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not update summary information: {ex.Message}", Severity.Error);
+        }
+    }
+
     public void Dispose() => MsiService.StateChanged -= OnMsiStateChanged;
+
+    // Mutable copy of SummaryInformationModel for the form to bind to.
+    private sealed class Form
+    {
+        public string Title { get; set; } = "";
+        public string Author { get; set; } = "";
+        public string Subject { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public string Keywords { get; set; } = "";
+        public string Platform { get; set; } = "";
+        public string Languages { get; set; } = "";
+        public string PackageCode { get; set; } = "";
+        public int Schema { get; set; }
+        public int Security { get; set; }
+        public bool ShortFileNames { get; set; }
+        public bool Compressed { get; set; }
+        public bool AdministrativeImage { get; set; }
+        public bool UacCompliant { get; set; }
+
+        public static Form From(SummaryInformationModel m) => new()
+        {
+            Title = m.Title,
+            Author = m.Author,
+            Subject = m.Subject,
+            Comments = m.Comments,
+            Keywords = m.Keywords,
+            Platform = m.Platform,
+            Languages = m.Languages,
+            PackageCode = m.PackageCode,
+            Schema = m.Schema,
+            Security = m.Security,
+            ShortFileNames = m.ShortFileNames,
+            Compressed = m.Compressed,
+            AdministrativeImage = m.AdministrativeImage,
+            UacCompliant = m.UacCompliant
+        };
+
+        public SummaryInformationModel ToModel() => new(
+            Title, Author, Subject, Comments, Keywords, Platform, Languages, PackageCode,
+            Schema, Security, ShortFileNames, Compressed, AdministrativeImage, UacCompliant);
+    }
 }

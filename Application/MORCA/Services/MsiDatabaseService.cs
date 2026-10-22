@@ -9,41 +9,59 @@ namespace MORCA.Services;
 public class MsiDatabaseService : IDisposable
 {
     private Database? _database;
-    private string? _filePath;      // null while the database is untitled
-    private string? _tempPath;      // hidden backing file for an untitled database
-    private bool _readOnly;
+    private string? _filePath;      // where the document is saved; null while untitled
+    private string? _workingPath;   // temp working copy that every read and edit goes through
 
     /// <summary>Path of the saved file, or null while the database is untitled.</summary>
     public string? FilePath => _filePath;
     public bool IsOpen => _database != null;
+    public bool IsUntitled => _database != null && _filePath == null;
+    public string DisplayName => _filePath != null ? FriendlyName(_filePath) : "Untitled";
+    public string SuggestedFileName => IsUntitled ? "Untitled.msi" : DisplayName;
+
+    /// <summary>
+    /// True when Save can write straight back to <see cref="FilePath"/>. On Android and iOS the
+    /// picker hands us a private copy (or a content URI), so Save has to go through Save As.
+    /// </summary>
+    public bool CanSaveInPlace =>
+        _filePath != null && !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
 
     /// <summary>True when there are changes that have not been saved.</summary>
     public bool IsDirty { get; private set; }
 
-    /// <summary>Call after any change to the database (row insert/update/delete, table import, ...).</summary>
+    /// <summary>Raised after a database is opened, created, modified, saved or closed.</summary>
+    public event Action? StateChanged;
+
+    /// <summary>Call after any change to the database (summary info, row edits, table import, ...).</summary>
     public void MarkDirty()
     {
         if (_database == null || IsDirty) return;
         IsDirty = true;
         StateChanged?.Invoke();
     }
-    public bool IsUntitled => _database != null && _filePath == null;
-    public string DisplayName => _filePath != null ? Path.GetFileName(_filePath) : "Untitled";
-    public string SuggestedFileName => IsUntitled ? "Untitled.msi" : Path.GetFileName(_filePath!);
-
-    /// <summary>Raised after a database is opened, created, saved under a new name, or closed.</summary>
-    public event Action? StateChanged;
 
     /// <summary>
-    /// Opens an MSI file
+    /// Opens an MSI file. The file itself is never modified until <see cref="Save"/>: all work
+    /// happens on a temporary copy.
     /// </summary>
-    public void Open(string path, bool readOnly = true)
+    public void Open(string path)
     {
         Close();
 
-        var mode = readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct;
-        _database = new Database(path, mode);
-        _readOnly = readOnly;
+        var working = NewWorkingPath();
+        try
+        {
+            File.Copy(path, working);
+            File.SetAttributes(working, FileAttributes.Normal); // the original may be read-only
+            _database = new Database(working, DatabaseOpenMode.Direct);
+        }
+        catch
+        {
+            DeleteQuietly(working);
+            throw;
+        }
+
+        _workingPath = working;
         _filePath = path;
         IsDirty = false;
         StateChanged?.Invoke();
@@ -51,83 +69,109 @@ public class MsiDatabaseService : IDisposable
 
     /// <summary>
     /// Creates a new, empty "Untitled" database. It has no path until it is saved with
-    /// <see cref="AdoptSavedFile"/>; until then it lives in a hidden temp file.
+    /// <see cref="AdoptSavedFile"/>.
     /// </summary>
     public void CreateUntitled()
     {
         Close();
 
-        _tempPath = Path.Combine(Path.GetTempPath(), $"MORCA-{Guid.NewGuid():N}.msi");
-        using (var db = new Database(_tempPath, DatabaseOpenMode.CreateDirect))
+        var working = NewWorkingPath();
+        try
         {
-            db.Commit();
+            using (var db = new Database(working, DatabaseOpenMode.CreateDirect))
+            {
+                db.Commit();
+            }
+            _database = new Database(working, DatabaseOpenMode.Direct);
+        }
+        catch
+        {
+            DeleteQuietly(working);
+            throw;
         }
 
-        _database = new Database(_tempPath, DatabaseOpenMode.Direct);
-        _readOnly = false;
+        _workingPath = working;
         _filePath = null;
         IsDirty = false;
         StateChanged?.Invoke();
     }
 
-    /// <summary>Commits pending changes to the current file.</summary>
+    /// <summary>Writes the working copy back over the saved file.</summary>
     public void Save()
     {
         if (_database == null) throw new InvalidOperationException("No database open");
-        if (!_readOnly) _database.Commit();
+        if (!CanSaveInPlace) throw new NotSupportedException("This database must be saved with Save As.");
 
-        if (IsDirty)
-        {
-            IsDirty = false;
-            StateChanged?.Invoke();
-        }
+        CopyWorkingTo(_filePath!);
+        IsDirty = false;
+        StateChanged?.Invoke();
     }
 
     /// <summary>
     /// Returns the current database as bytes for a Save As operation. The database handle is
-    /// released while the file is read and then reopened.
+    /// released while the working copy is read and then reopened.
     /// </summary>
     public byte[] ReadAllBytes()
     {
         if (_database == null) throw new InvalidOperationException("No database open");
 
-        var path = _filePath ?? _tempPath!;
-        if (!_readOnly) _database.Commit();
+        _database.Commit();
         _database.Close();
         _database.Dispose();
         try
         {
-            return File.ReadAllBytes(path);
+            return File.ReadAllBytes(_workingPath!);
         }
         finally
         {
-            _database = new Database(path, _readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct);
+            _database = new Database(_workingPath!, DatabaseOpenMode.Direct);
         }
     }
 
     /// <summary>
-    /// Re-points the open database at a file that Save As just wrote, and discards the
-    /// temp file if the database was untitled.
+    /// Records that Save As just wrote the database to <paramref name="newPath"/>. The working
+    /// copy stays open; only the document's name and clean state change.
     /// </summary>
     public void AdoptSavedFile(string newPath)
     {
-        var oldTemp = _tempPath;
+        if (_database == null) throw new InvalidOperationException("No database open");
 
-        _database?.Close();
-        _database?.Dispose();
-        _database = new Database(newPath, DatabaseOpenMode.Direct);
-        _readOnly = false;
         _filePath = newPath;
-        _tempPath = null;
         IsDirty = false;
-
-        DeleteQuietly(oldTemp);
         StateChanged?.Invoke();
     }
+
+    private void CopyWorkingTo(string destination)
+    {
+        _database!.Commit();
+        _database.Close();
+        _database.Dispose();
+        try
+        {
+            File.Copy(_workingPath!, destination, overwrite: true);
+        }
+        finally
+        {
+            _database = new Database(_workingPath!, DatabaseOpenMode.Direct);
+        }
+    }
+
+    private static string NewWorkingPath() =>
+        Path.Combine(Path.GetTempPath(), $"MORCA-{Guid.NewGuid():N}.msi");
 
     private static void DeleteQuietly(string? path)
     {
         try { if (path != null && File.Exists(path)) File.Delete(path); } catch { /* best effort */ }
+    }
+
+    // Android's Save As returns a content:// URI rather than a path; show just its last segment.
+    private static string FriendlyName(string path)
+    {
+        if (!path.Contains("://")) return Path.GetFileName(path);
+
+        var decoded = Uri.UnescapeDataString(path);
+        var i = decoded.LastIndexOfAny(new[] { '/', ':' });
+        return i >= 0 ? decoded[(i + 1)..] : decoded;
     }
 
     /// <summary>
@@ -204,6 +248,35 @@ public class MsiDatabaseService : IDisposable
             Compressed: (wordCount & 2) != 0,
             AdministrativeImage: (wordCount & 4) != 0,
             UacCompliant: (wordCount & 8) != 0);
+    }
+
+    /// <summary>
+    /// Writes the Summary Information stream from the decoded model and marks the database dirty.
+    /// </summary>
+    public void SetSummaryInformation(SummaryInformationModel model)
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var info = _database.SummaryInfo;
+
+        info.Title = model.Title;
+        info.Author = model.Author;
+        info.Subject = model.Subject;
+        info.Comments = model.Comments;
+        info.Keywords = model.Keywords;
+        info.Template = string.IsNullOrEmpty(model.Languages) ? model.Platform : $"{model.Platform};{model.Languages}";
+        info.RevisionNumber = model.PackageCode;
+        info.PageCount = model.Schema;
+        info.Security = model.Security;
+        info.WordCount =
+            (model.ShortFileNames ? 1 : 0) |
+            (model.Compressed ? 2 : 0) |
+            (model.AdministrativeImage ? 4 : 0) |
+            (model.UacCompliant ? 8 : 0);
+
+        info.Persist();
+        _database.Commit();
+        MarkDirty();
     }
 
     /// <summary>True if the table has any column definitions in the database's _Columns table.</summary>
@@ -324,8 +397,8 @@ public class MsiDatabaseService : IDisposable
         _filePath = null;
         IsDirty = false;
 
-        DeleteQuietly(_tempPath);
-        _tempPath = null;
+        DeleteQuietly(_workingPath);
+        _workingPath = null;
 
         StateChanged?.Invoke();
     }
@@ -334,7 +407,7 @@ public class MsiDatabaseService : IDisposable
     {
         _database?.Close();
         _database?.Dispose();
-        DeleteQuietly(_tempPath);
+        DeleteQuietly(_workingPath);
         GC.SuppressFinalize(this);
     }
 }
