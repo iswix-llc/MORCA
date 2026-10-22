@@ -31,7 +31,7 @@
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive">
-        <NavMenu />
+        <NavMenu @key="MsiService.IsOpen" />
     </MudDrawer>
 
     <MudMainContent>
