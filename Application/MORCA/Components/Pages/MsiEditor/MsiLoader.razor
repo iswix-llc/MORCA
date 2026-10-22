@@ -1,0 +1,182 @@
+@page "/msi-editor"
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
+
+<PageTitle>MSI Editor - MORCA</PageTitle>
+
+<MudText Typo="Typo.h3" Tag="h1" GutterBottom="true">MSI Editor</MudText>
+
+@if (!MsiService.IsOpen)
+{
+    <MudPaper Class="pa-4">
+        <MudText Class="mb-4">Open an MSI file to view and edit tables.</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenFile">
+            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Class="mr-2" />
+            Open MSI File
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4">
+        <strong>Opened:</strong> @Path.GetFileName(MsiService.FilePath)
+    </MudAlert>
+    
+    <MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.subtitle2" GutterBottom="true" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
+                    Tables
+                </MudText>
+                
+                @if (_tables != null)
+                {
+                    @if (_tables.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning">No tables found.</MudAlert>
+                    }
+                    else
+                    {
+                        <MudList Style="max-height: 600px; overflow-y: auto;">
+                            @foreach (var table in _tables)
+                            {
+                                <MudListItem Button="true" 
+                                            Selected="@(_selectedTable == table)"
+                                            OnClick="@(() => SelectTable(table))"
+                                            Icon="@Icons.Material.Filled.GridOn">
+                                    @table
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                }
+                else
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                }
+            </MudPaper>
+        </MudItem>
+        
+        <MudItem xs="12" sm="8">
+            @if (_selectedTable != null)
+            {
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.subtitle2" GutterBottom="true">
+                        <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
+                        @_selectedTable
+                    </MudText>
+                    
+                    @if (_tableData != null)
+                    {
+                        @if (_tableData.Rows.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info">No rows in this table.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudTable Items="@_tableData.Rows" Hover="true" Dense="true" Striped="true">
+                                <HeaderContent>
+                                    @foreach (var col in _tableData.Columns)
+                                    {
+                                        <MudTh>@col.Name</MudTh>
+                                    }
+                                </HeaderContent>
+                                <RowTemplate>
+                                    @foreach (var col in _tableData.Columns)
+                                    {
+                                        <MudTd DataLabel="@col.Name">
+                                            <MudText Typo="Typo.caption">
+                                                @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
+                                            </MudText>
+                                        </MudTd>
+                                    }
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    }
+                    else
+                    {
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                    }
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.body2" Color="Color.TextSecondary">Select a table to view its rows.</MudText>
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+    
+    <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="CloseFile" Class="mt-4">
+        <MudIcon Icon="@Icons.Material.Filled.Close" Class="mr-2" />
+        Close File
+    </MudButton>
+}
+
+@code {
+    private List<string>? _tables;
+    private string? _selectedTable;
+    private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
+
+    private async Task OpenFile()
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Select an MSI file",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.Windows, new[] { ".msi" } }
+                })
+            });
+
+            if (result != null)
+            {
+                MsiService.OpenDatabase(result.FullPath, readOnly: true);
+                _tables = MsiService.GetTableNames();
+                _selectedTable = null;
+                _tableData = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            // TODO: Show error dialog
+            System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
+        }
+    }
+
+    private async Task SelectTable(string tableName)
+    {
+        try
+        {
+            _selectedTable = tableName;
+            _tableData = null;
+            
+            var columns = MsiService.GetTableColumns(tableName);
+            var rows = MsiService.GetTableRows(tableName);
+            _tableData = (columns, rows);
+        }
+        catch (Exception ex)
+        {
+            // TODO: Show error dialog
+            System.Diagnostics.Debug.WriteLine($"Error loading table: {ex.Message}");
+            _selectedTable = null;
+            _tableData = null;
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    private async Task CloseFile()
+    {
+        MsiService.Close();
+        _tables = null;
+        _selectedTable = null;
+        _tableData = null;
+        await Task.CompletedTask;
+    }
+}
