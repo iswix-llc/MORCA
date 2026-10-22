@@ -30,6 +30,25 @@ public class MsiDatabaseService : IDisposable
     }
 
     /// <summary>
+    /// Creates a new, empty MSI file at <paramref name="path"/> and opens it for editing.
+    /// Throws if the file already exists.
+    /// </summary>
+    public void Create(string path)
+    {
+        if (File.Exists(path))
+            throw new IOException($"'{path}' already exists.");
+
+        Close();
+
+        using (var db = new Database(path, DatabaseOpenMode.CreateDirect))
+        {
+            db.Commit();
+        }
+
+        Open(path, readOnly: false);
+    }
+
+    /// <summary>
     /// Gets all table names from the database
     /// </summary>
     public List<string> GetTableNames()

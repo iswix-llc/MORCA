@@ -3,6 +3,8 @@
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -23,6 +25,10 @@
         
         <MudSpacer />
         
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.NoteAdd" OnClick="NewMsiFile">
+            New
+        </MudButton>
+
         <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="OpenMsiFile">
             Open
         </MudButton>
@@ -74,6 +80,25 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
+        }
+    }
+
+    private async Task NewMsiFile()
+    {
+        var dialog = await DialogService.ShowAsync<NewMsiDialog>("New MSI");
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not string fileName)
+            return;
+
+        try
+        {
+            var folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            MsiService.Create(Path.Combine(folder, fileName));
+            Navigation.NavigateTo("msi-tables");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create MSI: {ex.Message}", Severity.Error);
         }
     }
 
