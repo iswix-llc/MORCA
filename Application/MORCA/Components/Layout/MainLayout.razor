@@ -77,7 +77,11 @@
                 PickerTitle = "Select an MSI file",
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.WinUI, new[] { ".msi" } }
+                    { DevicePlatform.WinUI, new[] { ".msi" } },
+                    // Android and Apple pickers filter by MIME type / UTI, and have no reliable one for .msi
+                    { DevicePlatform.Android, new[] { "*/*" } },
+                    { DevicePlatform.iOS, new[] { "public.data" } },
+                    { DevicePlatform.MacCatalyst, new[] { "public.data" } }
                 })
             });
 
@@ -89,7 +93,7 @@
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
+            Snackbar.Add($"Could not open file: {ex.Message}", Severity.Error);
         }
     }
 
