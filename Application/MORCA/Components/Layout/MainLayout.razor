@@ -88,7 +88,7 @@
             if (result != null)
             {
                 MsiService.Open(result.FullPath, readOnly: true);
-                Navigation.NavigateTo("msi-tables");
+                Navigation.NavigateTo("msi-summaryinformation");
             }
         }
         catch (Exception ex)
@@ -104,7 +104,7 @@
         try
         {
             MsiService.CreateUntitled();
-            Navigation.NavigateTo("msi-tables");
+            Navigation.NavigateTo("msi-summaryinformation");
         }
         catch (Exception ex)
         {
