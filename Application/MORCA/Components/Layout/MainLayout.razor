@@ -12,7 +12,7 @@
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" aria-label="Toggle navigation menu" />
         <MudText Typo="Typo.h6" Class="ml-3">MORCA</MudText>
         
-        @if (MsiService.IsOpen)
+        @if (_isOpen)
         {
             <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
                 📦 @Path.GetFileName(MsiService.FilePath)
@@ -25,13 +25,13 @@
             Open
         </MudButton>
         
-        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Disabled="@(!MsiService.IsOpen)">
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Disabled="@(!_isOpen)">
             Close
         </MudButton>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive" Width="220px">
-        <NavMenu @key="MsiService.IsOpen" />
+        <NavMenu IsOpen="@_isOpen" />
     </MudDrawer>
 
     <MudMainContent>
@@ -43,6 +43,26 @@
 
 @code {
     private bool _drawerOpen = true;
+    private bool _isOpen;
+    private System.Timers.Timer? _stateCheckTimer;
+
+    protected override void OnInitialized()
+    {
+        _isOpen = MsiService.IsOpen;
+        
+        // Check service state every 500ms to detect changes
+        _stateCheckTimer = new System.Timers.Timer(500);
+        _stateCheckTimer.Elapsed += (s, e) => 
+        {
+            var newState = MsiService.IsOpen;
+            if (newState != _isOpen)
+            {
+                _isOpen = newState;
+                InvokeAsync(StateHasChanged);
+            }
+        };
+        _stateCheckTimer.Start();
+    }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 
@@ -62,6 +82,7 @@
             if (result != null)
             {
                 MsiService.Open(result.FullPath, readOnly: true);
+                _isOpen = true;
                 StateHasChanged();
             }
         }
@@ -76,8 +97,15 @@
         if (MsiService.IsOpen)
         {
             MsiService.Close();
+            _isOpen = false;
             StateHasChanged();
         }
         await Task.CompletedTask;
+    }
+
+    void IDisposable.Dispose()
+    {
+        _stateCheckTimer?.Stop();
+        _stateCheckTimer?.Dispose();
     }
 }
