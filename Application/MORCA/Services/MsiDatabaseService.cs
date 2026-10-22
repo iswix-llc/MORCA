@@ -165,6 +165,55 @@ public class MsiDatabaseService : IDisposable
             .ToList();
     }
 
+    /// <summary>
+    /// Reads the database's Summary Information stream as (property, value) pairs, using Orca's
+    /// names for the properties. Properties that are not set come back with an empty value.
+    /// </summary>
+    public List<(string Property, string Value)> GetSummaryInformation()
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var info = _database.SummaryInfo;
+
+        static string Text(Func<object?> read)
+        {
+            try
+            {
+                return read() switch
+                {
+                    null => "",
+                    DateTime dt => dt.Year < 1700 ? "" : dt.ToString("g"),
+                    var other => other.ToString() ?? ""
+                };
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        return new List<(string, string)>
+        {
+            ("Codepage", Text(() => info.CodePage)),
+            ("Title", Text(() => info.Title)),
+            ("Subject", Text(() => info.Subject)),
+            ("Author", Text(() => info.Author)),
+            ("Keywords", Text(() => info.Keywords)),
+            ("Comments", Text(() => info.Comments)),
+            ("Template (Platform;Languages)", Text(() => info.Template)),
+            ("Last Saved By", Text(() => info.LastSavedBy)),
+            ("Revision Number (Package Code)", Text(() => info.RevisionNumber)),
+            ("Last Printed", Text(() => info.LastPrintTime)),
+            ("Created", Text(() => info.CreateTime)),
+            ("Last Saved", Text(() => info.LastSaveTime)),
+            ("Page Count (Minimum Installer Version)", Text(() => info.PageCount)),
+            ("Word Count (Source Image Flags)", Text(() => info.WordCount)),
+            ("Character Count", Text(() => info.CharacterCount)),
+            ("Creating Application", Text(() => info.CreatingApp)),
+            ("Security", Text(() => info.Security)),
+        };
+    }
+
     /// <summary>True if the table has any column definitions in the database's _Columns table.</summary>
     private bool TableExists(string tableName)
     {

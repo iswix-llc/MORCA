@@ -1,0 +1,80 @@
+@page "/msi-summary-information"
+@using MORCA.Services
+@inject MsiDatabaseService MsiService
+@implements IDisposable
+
+<PageTitle>Summary Information - MORCA</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Summary Information</MudText>
+
+@if (!MsiService.IsOpen)
+{
+    <MudAlert Severity="Severity.Warning">
+        No MSI file is open. Click <strong>Open</strong> or <strong>New</strong> in the top menu.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4">
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Error">Could not read summary information: @_error</MudAlert>
+        }
+        else if (_properties == null)
+        {
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        }
+        else
+        {
+            <MudTable Items="_properties" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Property</MudTh>
+                    <MudTh>Value</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Property">@context.Property</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private List<(string Property, string Value)>? _properties;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        MsiService.StateChanged += OnMsiStateChanged;
+        Load();
+    }
+
+    private void OnMsiStateChanged()
+    {
+        InvokeAsync(() =>
+        {
+            Load();
+            StateHasChanged();
+        });
+    }
+
+    private void Load()
+    {
+        _properties = null;
+        _error = null;
+
+        if (!MsiService.IsOpen) return;
+
+        try
+        {
+            _properties = MsiService.GetSummaryInformation();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    public void Dispose() => MsiService.StateChanged -= OnMsiStateChanged;
+}
