@@ -103,9 +103,10 @@
         await Task.CompletedTask;
     }
 
-    void IDisposable.Dispose()
+    async ValueTask IAsyncDisposable.DisposeAsync()
     {
         _stateCheckTimer?.Stop();
         _stateCheckTimer?.Dispose();
+        await base.DisposeAsync();
     }
 }
