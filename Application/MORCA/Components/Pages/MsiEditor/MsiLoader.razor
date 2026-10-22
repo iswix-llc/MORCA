@@ -2,26 +2,18 @@
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 
-<PageTitle>MSI Editor - MORCA</PageTitle>
+<PageTitle>Table Editor - MORCA</PageTitle>
 
-<MudText Typo="Typo.h3" GutterBottom="true">MSI Editor</MudText>
+<MudText Typo="Typo.h3" GutterBottom="true">Table Editor</MudText>
 
 @if (!MsiService.IsOpen)
 {
-    <MudPaper Class="pa-4">
-        <MudText Class="mb-4">Open an MSI file to view and edit tables.</MudText>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenFile">
-            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Class="mr-2" />
-            Open MSI File
-        </MudButton>
-    </MudPaper>
+    <MudAlert Severity="Severity.Warning">
+        No MSI file is open. Click <strong>Open MSI</strong> in the top menu.
+    </MudAlert>
 }
 else
 {
-    <MudAlert Severity="Severity.Info" Class="mb-4">
-        <strong>Opened:</strong> @Path.GetFileName(MsiService.FilePath)
-    </MudAlert>
-    
     <MudGrid>
         <MudItem xs="12" sm="4">
             <MudPaper Class="pa-4">
@@ -111,11 +103,6 @@ else
             }
         </MudItem>
     </MudGrid>
-    
-    <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="CloseFile" Class="mt-4">
-        <MudIcon Icon="@Icons.Material.Filled.Close" Class="mr-2" />
-        Close File
-    </MudButton>
 }
 
 @code {
@@ -123,31 +110,13 @@ else
     private string? _selectedTable;
     private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
 
-    private async Task OpenFile()
+    protected override async Task OnInitializedAsync()
     {
-        try
+        if (MsiService.IsOpen)
         {
-            var result = await FilePicker.Default.PickAsync(new PickOptions
-            {
-                PickerTitle = "Select an MSI file",
-                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
-                {
-                    { DevicePlatform.WinUI, new[] { ".msi" } }
-                })
-            });
-
-            if (result != null)
-            {
-                MsiService.Open(result.FullPath, readOnly: true);
-                _tables = MsiService.GetTableNames();
-                _selectedTable = null;
-                _tableData = null;
-            }
+            _tables = MsiService.GetTableNames();
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
-        }
+        await Task.CompletedTask;
     }
 
     private async Task SelectTable(string tableName)
@@ -168,15 +137,6 @@ else
             _tableData = null;
         }
         
-        await Task.CompletedTask;
-    }
-
-    private async Task CloseFile()
-    {
-        MsiService.Close();
-        _tables = null;
-        _selectedTable = null;
-        _tableData = null;
         await Task.CompletedTask;
     }
 }
