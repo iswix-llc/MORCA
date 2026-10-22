@@ -5,7 +5,8 @@ on:
     branches: [dev, main]
     tags: ['v*.*.*']
   pull_request:
-
+  workflow_dispatch:
+  
 permissions:
   contents: write   
   id-token: write   
