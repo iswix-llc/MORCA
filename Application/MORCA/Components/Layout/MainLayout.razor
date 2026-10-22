@@ -21,18 +21,13 @@
         
         <MudSpacer />
         
-        @if (!MsiService.IsOpen)
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="OpenMsiFile" Class="mr-2">
-                Open MSI
-            </MudButton>
-        }
-        else
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Class="mr-2">
-                Close
-            </MudButton>
-        }
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="OpenMsiFile">
+            Open
+        </MudButton>
+        
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Disabled="@(!MsiService.IsOpen)">
+            Close
+        </MudButton>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive">
@@ -78,8 +73,11 @@
 
     private async Task CloseMsiFile()
     {
-        MsiService.Close();
-        StateHasChanged();
+        if (MsiService.IsOpen)
+        {
+            MsiService.Close();
+            StateHasChanged();
+        }
         await Task.CompletedTask;
     }
 }
