@@ -280,38 +280,19 @@ public class MsiDatabaseService : IDisposable
             (model.AdministrativeImage ? 4 : 0) |
             (model.UacCompliant ? 8 : 0);
 
-        // The summary information handle that Database.SummaryInfo returns is read-only, so
-        // release the database and open a writable one on the working file instead.
-        Step("Commit database", () => _database.Commit());
-        Step("Close database", () =>
-        {
-            _database.Close();
-            _database.Dispose();
-        });
-
-        SummaryInfo? info = null;
-        try
-        {
-            Step("Open summary information for writing", () => info = new SummaryInfo(_workingPath!, true));
-
-            Step("Title", () => info!.Title = model.Title);
-            Step("Author", () => info!.Author = model.Author);
-            Step("Subject", () => info!.Subject = model.Subject);
-            Step("Comments", () => info!.Comments = model.Comments);
-            Step("Keywords", () => info!.Keywords = model.Keywords);
-            Step("Template", () => info!.Template = template);
-            Step("Package Code", () => info!.RevisionNumber = model.PackageCode);
-            Step("Schema", () => info!.PageCount = model.Schema);
-            Step("Security", () => info!.Security = model.Security);
-            Step("Source image flags", () => info!.WordCount = wordCount);
-            Step("Persist", () => info!.Persist());
-            Step("Close summary information", () => info!.Dispose());
-        }
-        finally
-        {
-            try { info?.Dispose(); } catch { /* already reported above if it mattered */ }
-            Step("Reopen database", () => _database = new Database(_workingPath!, DatabaseOpenMode.Direct));
-        }
+        // Database.SummaryInfo is writable on a Direct database (IsWiX 0.1.6+); Commit() persists it.
+        var info = _database.SummaryInfo;
+        Step("Title", () => info.Title = model.Title);
+        Step("Author", () => info.Author = model.Author);
+        Step("Subject", () => info.Subject = model.Subject);
+        Step("Comments", () => info.Comments = model.Comments);
+        Step("Keywords", () => info.Keywords = model.Keywords);
+        Step("Template", () => info.Template = template);
+        Step("Package Code", () => info.RevisionNumber = model.PackageCode);
+        Step("Schema", () => info.PageCount = model.Schema);
+        Step("Security", () => info.Security = model.Security);
+        Step("Source image flags", () => info.WordCount = wordCount);
+        Step("Commit", () => _database.Commit());
 
         MarkDirty();
     }
