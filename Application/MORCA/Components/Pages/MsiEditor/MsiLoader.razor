@@ -4,7 +4,7 @@
 
 <PageTitle>MSI Editor - MORCA</PageTitle>
 
-<MudText Typo="Typo.h3" Tag="h1" GutterBottom="true">MSI Editor</MudText>
+<MudText Typo="Typo.h3" GutterBottom="true">MSI Editor</MudText>
 
 @if (!MsiService.IsOpen)
 {
@@ -38,17 +38,19 @@ else
                     }
                     else
                     {
-                        <MudList Style="max-height: 600px; overflow-y: auto;">
+                        <div Style="max-height: 600px; overflow-y: auto;">
                             @foreach (var table in _tables)
                             {
-                                <MudListItem Button="true" 
-                                            Selected="@(_selectedTable == table)"
-                                            OnClick="@(() => SelectTable(table))"
-                                            Icon="@Icons.Material.Filled.GridOn">
+                                <MudButton FullWidth="true"
+                                          Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
+                                          Color="Color.Primary"
+                                          OnClick="@(() => SelectTable(table))"
+                                          Class="mb-2"
+                                          StartIcon="@Icons.Material.Filled.GridOn">
                                     @table
-                                </MudListItem>
+                                </MudButton>
                             }
-                        </MudList>
+                        </div>
                     }
                 }
                 else
@@ -69,21 +71,21 @@ else
                     
                     @if (_tableData != null)
                     {
-                        @if (_tableData.Rows.Count == 0)
+                        @if (_tableData.Value.Rows.Count == 0)
                         {
                             <MudAlert Severity="Severity.Info">No rows in this table.</MudAlert>
                         }
                         else
                         {
-                            <MudTable Items="@_tableData.Rows" Hover="true" Dense="true" Striped="true">
+                            <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
                                 <HeaderContent>
-                                    @foreach (var col in _tableData.Columns)
+                                    @foreach (var col in _tableData.Value.Columns)
                                     {
                                         <MudTh>@col.Name</MudTh>
                                     }
                                 </HeaderContent>
                                 <RowTemplate>
-                                    @foreach (var col in _tableData.Columns)
+                                    @foreach (var col in _tableData.Value.Columns)
                                     {
                                         <MudTd DataLabel="@col.Name">
                                             <MudText Typo="Typo.caption">
@@ -104,7 +106,7 @@ else
             else
             {
                 <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.body2" Color="Color.TextSecondary">Select a table to view its rows.</MudText>
+                    <MudText Typo="Typo.body2">Select a table to view its rows.</MudText>
                 </MudPaper>
             }
         </MudItem>
@@ -130,13 +132,13 @@ else
                 PickerTitle = "Select an MSI file",
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.Windows, new[] { ".msi" } }
+                    { DevicePlatform.WinUI, new[] { ".msi" } }
                 })
             });
 
             if (result != null)
             {
-                MsiService.OpenDatabase(result.FullPath, readOnly: true);
+                MsiService.Open(result.FullPath, readOnly: true);
                 _tables = MsiService.GetTableNames();
                 _selectedTable = null;
                 _tableData = null;
@@ -144,7 +146,6 @@ else
         }
         catch (Exception ex)
         {
-            // TODO: Show error dialog
             System.Diagnostics.Debug.WriteLine($"Error opening file: {ex.Message}");
         }
     }
@@ -162,7 +163,6 @@ else
         }
         catch (Exception ex)
         {
-            // TODO: Show error dialog
             System.Diagnostics.Debug.WriteLine($"Error loading table: {ex.Message}");
             _selectedTable = null;
             _tableData = null;

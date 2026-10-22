@@ -1,5 +1,4 @@
 using IsWiX.WindowsInstaller;
-using System.Collections.ObjectModel;
 
 namespace MORCA.Services;
 
@@ -17,7 +16,7 @@ public class MsiDatabaseService : IDisposable
     /// <summary>
     /// Opens an MSI file
     /// </summary>
-    public void OpenDatabase(string path, bool readOnly = true)
+    public void Open(string path, bool readOnly = true)
     {
         _database?.Close();
         _database?.Dispose();
