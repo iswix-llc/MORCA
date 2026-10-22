@@ -4,127 +4,82 @@
 
 <PageTitle>Table Editor - MORCA</PageTitle>
 
-@key="MsiService.IsOpen"
+<div @key="MsiService.IsOpen">
+    @if (!MsiService.IsOpen)
+    {
+        <MudAlert Severity="Severity.Warning">
+            No MSI file is open. Click <strong>Open MSI</strong> in the top menu.
+        </MudAlert>
+    }
+    else
+    {
+        <style>
+            .editor-container {
+                display: flex;
+                height: calc(100vh - 120px);
+                margin: -24px -24px -24px -24px;
+            }
+            .tables-panel {
+                flex: 0 0 220px;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                background: var(--mud-palette-surface);
+                border-right: 1px solid var(--mud-palette-divider);
+            }
+            .tables-list {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px;
+            }
+            .tables-title {
+                padding: 16px 16px 0 16px;
+                margin-bottom: 8px;
+                flex-shrink: 0;
+            }
+            .content-panel {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                padding: 16px;
+            }
+            .content-title {
+                margin-bottom: 16px;
+                flex-shrink: 0;
+            }
+            .content-area {
+                flex: 1;
+                overflow-y: auto;
+            }
+        </style>
 
-@if (!MsiService.IsOpen)
-{
-    <MudAlert Severity="Severity.Warning">
-        No MSI file is open. Click <strong>Open MSI</strong> in the top menu.
-    </MudAlert>
-}
-else
-{
-    <style>
-        .editor-container {
-            display: flex;
-            height: calc(100vh - 120px);
-            margin: -24px -24px -24px -24px;
-        }
-        .tables-panel {
-            flex: 0 0 220px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: var(--mud-palette-surface);
-            border-right: 1px solid var(--mud-palette-divider);
-        }
-        .tables-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-        }
-        .tables-title {
-            padding: 16px 16px 0 16px;
-            margin-bottom: 8px;
-            flex-shrink: 0;
-        }
-        .content-panel {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            padding: 16px;
-        }
-        .content-title {
-            margin-bottom: 16px;
-            flex-shrink: 0;
-        }
-        .content-area {
-            flex: 1;
-            overflow-y: auto;
-        }
-    </style>
-
-    <div class="editor-container">
-        <div class="tables-panel">
-            <MudText Typo="Typo.subtitle2" Class="tables-title">
-                <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
-                Tables
-            </MudText>
-            <div class="tables-list">
-                @if (_tables != null)
-                {
-                    @if (_tables.Count == 0)
-                    {
-                        <MudAlert Severity="Severity.Warning">No tables found.</MudAlert>
-                    }
-                    else
-                    {
-                        @foreach (var table in _tables)
-                        {
-                            <MudButton FullWidth="true"
-                                      Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
-                                      Color="Color.Primary"
-                                      OnClick="@(() => SelectTable(table))"
-                                      Class="mb-2"
-                                      StartIcon="@Icons.Material.Filled.GridOn">
-                                @table
-                            </MudButton>
-                        }
-                    }
-                }
-                else
-                {
-                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
-                }
-            </div>
-        </div>
-
-        <div class="content-panel">
-            @if (_selectedTable != null)
-            {
-                <MudText Typo="Typo.subtitle2" Class="content-title">
-                    <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
-                    @_selectedTable
+        <div class="editor-container">
+            <div class="tables-panel">
+                <MudText Typo="Typo.subtitle2" Class="tables-title">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
+                    Tables
                 </MudText>
-
-                <div class="content-area">
-                    @if (_tableData != null)
+                <div class="tables-list">
+                    @if (_tables != null)
                     {
-                        @if (_tableData.Value.Rows.Count == 0)
+                        @if (_tables.Count == 0)
                         {
-                            <MudAlert Severity="Severity.Info">No rows in this table.</MudAlert>
+                            <MudAlert Severity="Severity.Warning">No tables found.</MudAlert>
                         }
                         else
                         {
-                            <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
-                                <HeaderContent>
-                                    @foreach (var col in _tableData.Value.Columns)
-                                    {
-                                        <MudTh>@col.Name</MudTh>
-                                    }
-                                </HeaderContent>
-                                <RowTemplate>
-                                    @foreach (var col in _tableData.Value.Columns)
-                                    {
-                                        <MudTd DataLabel="@col.Name">
-                                            <MudText Typo="Typo.caption">
-                                                @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
-                                            </MudText>
-                                        </MudTd>
-                                    }
-                                </RowTemplate>
-                            </MudTable>
+                            @foreach (var table in _tables)
+                            {
+                                <MudButton FullWidth="true"
+                                          Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
+                                          Color="Color.Primary"
+                                          OnClick="@(() => SelectTable(table))"
+                                          Class="mb-2"
+                                          StartIcon="@Icons.Material.Filled.GridOn">
+                                    @table
+                                </MudButton>
+                            }
                         }
                     }
                     else
@@ -132,14 +87,59 @@ else
                         <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
                     }
                 </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2">Select a table to view its rows.</MudText>
-            }
+            </div>
+
+            <div class="content-panel">
+                @if (_selectedTable != null)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="content-title">
+                        <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
+                        @_selectedTable
+                    </MudText>
+
+                    <div class="content-area">
+                        @if (_tableData != null)
+                        {
+                            @if (_tableData.Value.Rows.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Info">No rows in this table.</MudAlert>
+                            }
+                            else
+                            {
+                                <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
+                                    <HeaderContent>
+                                        @foreach (var col in _tableData.Value.Columns)
+                                        {
+                                            <MudTh>@col.Name</MudTh>
+                                        }
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        @foreach (var col in _tableData.Value.Columns)
+                                        {
+                                            <MudTd DataLabel="@col.Name">
+                                                <MudText Typo="Typo.caption">
+                                                    @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
+                                                </MudText>
+                                            </MudTd>
+                                        }
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        }
+                        else
+                        {
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        }
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">Select a table to view its rows.</MudText>
+                }
+            </div>
         </div>
-    </div>
-}
+    }
+</div>
 
 @code {
     private List<string>? _tables;
