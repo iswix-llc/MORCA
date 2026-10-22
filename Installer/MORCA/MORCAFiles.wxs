@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?define ComponentRules="OneToOne"?>
+  <!-- SourceDir instructs IsWiX the location of the directory that contains files for this wix library -->
+  <?define SourceDir="..\Deploy"?>
+  <Fragment>
+    <ComponentGroup Id="MORCAFiles">
+      <Component Directory="INSTALLLOCATION" Subdirectory="App">
+        <File Source="$(var.SourceDir)\App\MORCA.exe" KeyPath="yes">
+          <Shortcut Id="scB63C53AD216E88C7778D037B21BDD656" Name="MORCA" Directory="DesktopFolder" Advertise="yes" />
+        </File>
+      </Component>
+    </ComponentGroup>
+	  <ComponentGroup Id="MORCADynamicFiles">
+		  <Files Directory="INSTALLLOCATION" Subdirectory="App" Include="$(var.SourceDir)\App\**\*">
+			  <Exclude Files="$(var.SourceDir)\App\MORCA.exe" />
+		  </Files>
+	  </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -1,0 +1,136 @@
+name: Build
+
+on:
+  push:
+    branches: [dev, main]
+    tags: ['v*.*.*']
+  pull_request:
+
+permissions:
+  contents: write   
+  id-token: write   
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $v = $env:GITHUB_REF_NAME -replace '^v', ''   # v1.2.3 -> 1.2.3
+          } else {
+            $v = "0.0.$env:GITHUB_RUN_NUMBER"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $v"
+
+      - name: Publish app (self-contained, unpackaged)
+        run: >
+          dotnet publish Application/MORCA/MORCA.csproj
+          -f net10.0-windows10.0.19041.0
+          -p:PublishProfile=win-x64
+          -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
+          -p:ApplicationVersion=${{ github.run_number }}
+
+      # Everything below needs secrets/artifacts, so skip it for pull requests.
+      - name: Azure login (OIDC)
+        if: github.ref_type == 'tag'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign MORCA.exe
+        if: github.ref_type == 'tag'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/Installer/Deploy/App
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Build MSI
+        if: github.event_name != 'pull_request'
+        run: >
+          dotnet build Installer/MORCA/MORCA.wixproj
+          -c Release -p:Platform=x64
+          -p:MSIProductVersion=${{ steps.version.outputs.version }}
+
+      - name: Sign MSI
+        if: github.ref_type == 'tag'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/Installer/MORCA/bin/x64/Release
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload MSI artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MORCA-msi-${{ steps.version.outputs.version }}
+          path: Installer/MORCA/bin/x64/Release/*.msi
+          if-no-files-found: error
+
+      - name: Draft GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: Installer/MORCA/bin/x64/Release/*.msi
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-android
+
+      # No keystore is configured yet, so the APK is debug-signed: fine for sideloading testers.
+      - name: Publish Android APK
+        run: >
+          dotnet publish Application/MORCA/MORCA.csproj
+          -f net10.0-android -c Release
+          -p:AndroidPackageFormat=apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MORCA-apk
+          path: Application/MORCA/bin/Release/net10.0-android/publish/*.apk
+          if-no-files-found: error
