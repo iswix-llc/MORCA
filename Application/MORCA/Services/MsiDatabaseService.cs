@@ -145,9 +145,7 @@ public class MsiDatabaseService : IDisposable
             
             foreach (var record in view)
             {
-                var name = record.GetString(1);
-                if (!name.StartsWith("_")) // Exclude system tables by default
-                    tables.Add(name);
+                tables.Add(record.GetString(1));
             }
         }
         catch
@@ -155,7 +153,11 @@ public class MsiDatabaseService : IDisposable
             // If _Tables doesn't exist, try to get table names another way
         }
         
-        return tables.OrderBy(t => t).ToList();
+        // Regular tables first, then any other underscore (system) tables, with _Validation always last.
+        return tables
+            .OrderBy(t => t.Equals("_Validation", StringComparison.OrdinalIgnoreCase) ? 2 : t.StartsWith('_') ? 1 : 0)
+            .ThenBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
