@@ -4,8 +4,6 @@
 
 <PageTitle>Table Editor - MORCA</PageTitle>
 
-<MudText Typo="Typo.h3" GutterBottom="true">Table Editor</MudText>
-
 @if (!MsiService.IsOpen)
 {
     <MudAlert Severity="Severity.Warning">
@@ -14,14 +12,51 @@
 }
 else
 {
-    <MudGrid>
-        <MudItem xs="12" sm="4">
-            <MudPaper Class="pa-4">
-                <MudText Typo="Typo.subtitle2" GutterBottom="true" Class="mb-3">
-                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
-                    Tables
-                </MudText>
-                
+    <style>
+        .editor-container {
+            display: flex;
+            height: calc(100vh - 120px);
+            gap: 16px;
+        }
+        .tables-panel {
+            flex: 0 0 220px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .tables-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--mud-palette-surface);
+            border-radius: 4px;
+        }
+        .tables-title {
+            padding: 0 16px;
+            margin-bottom: 8px;
+        }
+        .content-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--mud-palette-surface);
+            border-radius: 4px;
+        }
+    </style>
+
+    <div class="editor-container">
+        <div class="tables-panel">
+            <MudText Typo="Typo.subtitle2" Class="tables-title">
+                <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
+                Tables
+            </MudText>
+            <div class="tables-list">
                 @if (_tables != null)
                 {
                     @if (_tables.Count == 0)
@@ -30,37 +65,35 @@ else
                     }
                     else
                     {
-                        <div Style="max-height: 600px; overflow-y: auto;">
-                            @foreach (var table in _tables)
-                            {
-                                <MudButton FullWidth="true"
-                                          Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
-                                          Color="Color.Primary"
-                                          OnClick="@(() => SelectTable(table))"
-                                          Class="mb-2"
-                                          StartIcon="@Icons.Material.Filled.GridOn">
-                                    @table
-                                </MudButton>
-                            }
-                        </div>
+                        @foreach (var table in _tables)
+                        {
+                            <MudButton FullWidth="true"
+                                      Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
+                                      Color="Color.Primary"
+                                      OnClick="@(() => SelectTable(table))"
+                                      Class="mb-2"
+                                      StartIcon="@Icons.Material.Filled.GridOn">
+                                @table
+                            </MudButton>
+                        }
                     }
                 }
                 else
                 {
                     <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
                 }
-            </MudPaper>
-        </MudItem>
-        
-        <MudItem xs="12" sm="8">
+            </div>
+        </div>
+
+        <div class="content-panel">
             @if (_selectedTable != null)
             {
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.subtitle2" GutterBottom="true">
-                        <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
-                        @_selectedTable
-                    </MudText>
-                    
+                <MudText Typo="Typo.subtitle2" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
+                    @_selectedTable
+                </MudText>
+
+                <div class="content-area">
                     @if (_tableData != null)
                     {
                         @if (_tableData.Value.Rows.Count == 0)
@@ -93,16 +126,14 @@ else
                     {
                         <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
                     }
-                </MudPaper>
+                </div>
             }
             else
             {
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.body2">Select a table to view its rows.</MudText>
-                </MudPaper>
+                <MudText Typo="Typo.body2">Select a table to view its rows.</MudText>
             }
-        </MudItem>
-    </MudGrid>
+        </div>
+    </div>
 }
 
 @code {
