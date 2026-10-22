@@ -33,7 +33,7 @@
             Open
         </MudButton>
         
-        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveMsiFile" Disabled="@(!MsiService.IsOpen)">
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveMsiFile" Disabled="@(!(MsiService.IsDirty || MsiService.IsUntitled))">
             Save
         </MudButton>
 
