@@ -1,10 +1,10 @@
-@using MORCA.Services
-@inject MsiDatabaseService MsiService
+@implements IDisposable
+@inject MORCA.Services.MsiDatabaseService MsiService
 
 <MudNavMenu>
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
-    
-    @if (IsOpen)
+
+    @if (MsiService.IsOpen)
     {
         <MudDivider Class="my-2" />
         <MudText Typo="Typo.caption" Class="px-4 mt-2">MSI Tools</MudText>
@@ -16,6 +16,9 @@
 </MudNavMenu>
 
 @code {
-    [Parameter]
-    public bool IsOpen { get; set; }
+    protected override void OnInitialized() => MsiService.StateChanged += OnMsiStateChanged;
+
+    private void OnMsiStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => MsiService.StateChanged -= OnMsiStateChanged;
 }

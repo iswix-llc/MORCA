@@ -1,10 +1,11 @@
 @page "/msi-tables"
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
+@implements IDisposable
 
 <PageTitle>Table Editor - MORCA</PageTitle>
 
-<div @key="MsiService.IsOpen">
+<div>
     @if (!MsiService.IsOpen)
     {
         <MudAlert Severity="Severity.Warning">
@@ -152,16 +153,29 @@
     private string? _selectedTable;
     private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        if (MsiService.IsOpen)
-        {
-            _tables = MsiService.GetTableNames();
-        }
-        await Task.CompletedTask;
+        MsiService.StateChanged += OnMsiStateChanged;
+        LoadTables();
     }
 
-    private async Task SelectTable(string tableName)
+    private void OnMsiStateChanged()
+    {
+        InvokeAsync(() =>
+        {
+            LoadTables();
+            StateHasChanged();
+        });
+    }
+
+    private void LoadTables()
+    {
+        _selectedTable = null;
+        _tableData = null;
+        _tables = MsiService.IsOpen ? MsiService.GetTableNames() : null;
+    }
+
+    private void SelectTable(string tableName)
     {
         try
         {
@@ -178,7 +192,7 @@
             _selectedTable = null;
             _tableData = null;
         }
-
-        await Task.CompletedTask;
     }
+
+    public void Dispose() => MsiService.StateChanged -= OnMsiStateChanged;
 }

@@ -13,17 +13,20 @@ public class MsiDatabaseService : IDisposable
     public string? FilePath => _filePath;
     public bool IsOpen => _database != null;
 
+    /// <summary>Raised after a database is opened or closed.</summary>
+    public event Action? StateChanged;
+
     /// <summary>
     /// Opens an MSI file
     /// </summary>
     public void Open(string path, bool readOnly = true)
     {
-        _database?.Close();
-        _database?.Dispose();
-        
+        Close();
+
         var mode = readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct;
         _database = new Database(path, mode);
         _filePath = path;
+        StateChanged?.Invoke();
     }
 
     /// <summary>
@@ -145,8 +148,13 @@ public class MsiDatabaseService : IDisposable
     /// </summary>
     public void Close()
     {
-        _database?.Close();
+        if (_database == null) return;
+
+        _database.Close();
+        _database.Dispose();
+        _database = null;
         _filePath = null;
+        StateChanged?.Invoke();
     }
 
     public void Dispose()
