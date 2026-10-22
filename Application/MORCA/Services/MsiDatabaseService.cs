@@ -8,12 +8,18 @@ namespace MORCA.Services;
 public class MsiDatabaseService : IDisposable
 {
     private Database? _database;
-    private string? _filePath;
+    private string? _filePath;      // null while the database is untitled
+    private string? _tempPath;      // hidden backing file for an untitled database
+    private bool _readOnly;
 
+    /// <summary>Path of the saved file, or null while the database is untitled.</summary>
     public string? FilePath => _filePath;
     public bool IsOpen => _database != null;
+    public bool IsUntitled => _database != null && _filePath == null;
+    public string DisplayName => _filePath != null ? Path.GetFileName(_filePath) : "Untitled";
+    public string SuggestedFileName => IsUntitled ? "Untitled.msi" : Path.GetFileName(_filePath!);
 
-    /// <summary>Raised after a database is opened or closed.</summary>
+    /// <summary>Raised after a database is opened, created, saved under a new name, or closed.</summary>
     public event Action? StateChanged;
 
     /// <summary>
@@ -25,27 +31,82 @@ public class MsiDatabaseService : IDisposable
 
         var mode = readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct;
         _database = new Database(path, mode);
+        _readOnly = readOnly;
         _filePath = path;
         StateChanged?.Invoke();
     }
 
     /// <summary>
-    /// Creates a new, empty MSI file at <paramref name="path"/> and opens it for editing.
-    /// Throws if the file already exists.
+    /// Creates a new, empty "Untitled" database. It has no path until it is saved with
+    /// <see cref="AdoptSavedFile"/>; until then it lives in a hidden temp file.
     /// </summary>
-    public void Create(string path)
+    public void CreateUntitled()
     {
-        if (File.Exists(path))
-            throw new IOException($"'{path}' already exists.");
-
         Close();
 
-        using (var db = new Database(path, DatabaseOpenMode.CreateDirect))
+        _tempPath = Path.Combine(Path.GetTempPath(), $"MORCA-{Guid.NewGuid():N}.msi");
+        using (var db = new Database(_tempPath, DatabaseOpenMode.CreateDirect))
         {
             db.Commit();
         }
 
-        Open(path, readOnly: false);
+        _database = new Database(_tempPath, DatabaseOpenMode.Direct);
+        _readOnly = false;
+        _filePath = null;
+        StateChanged?.Invoke();
+    }
+
+    /// <summary>Commits pending changes to the current file.</summary>
+    public void Save()
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+        if (!_readOnly) _database.Commit();
+    }
+
+    /// <summary>
+    /// Returns the current database as bytes for a Save As operation. The database handle is
+    /// released while the file is read and then reopened.
+    /// </summary>
+    public byte[] ReadAllBytes()
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var path = _filePath ?? _tempPath!;
+        if (!_readOnly) _database.Commit();
+        _database.Close();
+        _database.Dispose();
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        finally
+        {
+            _database = new Database(path, _readOnly ? DatabaseOpenMode.ReadOnly : DatabaseOpenMode.Direct);
+        }
+    }
+
+    /// <summary>
+    /// Re-points the open database at a file that Save As just wrote, and discards the
+    /// temp file if the database was untitled.
+    /// </summary>
+    public void AdoptSavedFile(string newPath)
+    {
+        var oldTemp = _tempPath;
+
+        _database?.Close();
+        _database?.Dispose();
+        _database = new Database(newPath, DatabaseOpenMode.Direct);
+        _readOnly = false;
+        _filePath = newPath;
+        _tempPath = null;
+
+        DeleteQuietly(oldTemp);
+        StateChanged?.Invoke();
+    }
+
+    private static void DeleteQuietly(string? path)
+    {
+        try { if (path != null && File.Exists(path)) File.Delete(path); } catch { /* best effort */ }
     }
 
     /// <summary>
@@ -173,6 +234,10 @@ public class MsiDatabaseService : IDisposable
         _database.Dispose();
         _database = null;
         _filePath = null;
+
+        DeleteQuietly(_tempPath);
+        _tempPath = null;
+
         StateChanged?.Invoke();
     }
 
@@ -180,6 +245,7 @@ public class MsiDatabaseService : IDisposable
     {
         _database?.Close();
         _database?.Dispose();
+        DeleteQuietly(_tempPath);
         GC.SuppressFinalize(this);
     }
 }

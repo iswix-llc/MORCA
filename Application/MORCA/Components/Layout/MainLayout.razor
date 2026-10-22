@@ -3,7 +3,6 @@
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 @inject NavigationManager Navigation
-@inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
 <MudThemeProvider />
@@ -19,7 +18,7 @@
         @if (MsiService.IsOpen)
         {
             <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
-                📦 @Path.GetFileName(MsiService.FilePath)
+                📦 @MsiService.DisplayName
             </MudText>
         }
         
@@ -33,6 +32,14 @@
             Open
         </MudButton>
         
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveMsiFile" Disabled="@(!MsiService.IsOpen)">
+            Save
+        </MudButton>
+
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.SaveAs" OnClick="SaveMsiFileAs" Disabled="@(!MsiService.IsOpen)">
+            Save As
+        </MudButton>
+
         <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Close" OnClick="CloseMsiFile" Disabled="@(!MsiService.IsOpen)">
             Close
         </MudButton>
@@ -83,22 +90,59 @@
         }
     }
 
-    private async Task NewMsiFile()
+    private void NewMsiFile()
     {
-        var dialog = await DialogService.ShowAsync<NewMsiDialog>("New MSI");
-        var result = await dialog.Result;
-        if (result is null || result.Canceled || result.Data is not string fileName)
-            return;
-
         try
         {
-            var folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            MsiService.Create(Path.Combine(folder, fileName));
+            MsiService.CreateUntitled();
             Navigation.NavigateTo("msi-tables");
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Could not create MSI: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SaveMsiFile()
+    {
+        if (MsiService.IsUntitled)
+        {
+            await SaveMsiFileAs();
+            return;
+        }
+
+        try
+        {
+            MsiService.Save();
+            Snackbar.Add($"Saved {MsiService.DisplayName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SaveMsiFileAs()
+    {
+        try
+        {
+            var bytes = MsiService.ReadAllBytes();
+            using var stream = new MemoryStream(bytes);
+
+            var result = await CommunityToolkit.Maui.Storage.FileSaver.Default.SaveAsync(MsiService.SuggestedFileName, stream);
+            if (result.IsSuccessful)
+            {
+                MsiService.AdoptSavedFile(result.FilePath);
+                Snackbar.Add($"Saved {MsiService.DisplayName}", Severity.Success);
+            }
+            else if (result.Exception is { } ex && !ex.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+            {
+                Snackbar.Add($"Could not save: {ex.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.Message}", Severity.Error);
         }
     }
 

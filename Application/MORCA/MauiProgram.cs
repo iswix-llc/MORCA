@@ -1,3 +1,4 @@
+﻿using CommunityToolkit.Maui;
 using Microsoft.Extensions.Logging;
 using MudBlazor.Services;
 using MORCA.Services;
@@ -11,6 +12,7 @@ namespace MORCA
             var builder = MauiApp.CreateBuilder();
             builder
                 .UseMauiApp<App>()
+                .UseMauiCommunityToolkit()
                 .ConfigureFonts(fonts =>
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");

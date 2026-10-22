@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 
@@ -7,7 +7,7 @@
 @if (MsiService.IsOpen)
 {
     <MudAlert Severity="Severity.Success" Class="mb-4">
-        <strong>MSI Loaded:</strong> @Path.GetFileName(MsiService.FilePath)
+        <strong>MSI Loaded:</strong> @MsiService.DisplayName
     </MudAlert>
     
     <MudText Typo="Typo.body1" Class="mb-4">

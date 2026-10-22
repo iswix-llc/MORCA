@@ -22,7 +22,7 @@ else
                     <tbody>
                         <tr>
                             <td style="width: 120px; font-weight: bold;">Path:</td>
-                            <td>@MsiService.FilePath</td>
+                            <td>@(MsiService.FilePath ?? "(not saved yet)")</td>
                         </tr>
                         <tr>
                             <td style="font-weight: bold;">Size:</td>
@@ -95,7 +95,8 @@ else
     {
         try
         {
-            var info = new FileInfo(MsiService.FilePath!);
+            if (MsiService.FilePath is null) return "Not saved yet";
+            var info = new FileInfo(MsiService.FilePath);
             return $"{info.Length:N0} bytes";
         }
         catch

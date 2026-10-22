@@ -13,6 +13,9 @@
         <!-- For example: <RuntimeIdentifiers>maccatalyst-x64;maccatalyst-arm64</RuntimeIdentifiers> -->
 
         <OutputType>Exe</OutputType>
+
+        <!-- CommunityToolkit.Maui 14.1.1 requires Microsoft.Maui.Controls >= 10.0.60 -->
+        <MauiVersion>10.0.60</MauiVersion>
         <RootNamespace>MORCA</RootNamespace>
         <UseMaui>true</UseMaui>
         <SingleProject>true</SingleProject>
@@ -71,6 +74,7 @@
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+        <PackageReference Include="CommunityToolkit.Maui" Version="14.1.1" />
         <PackageReference Include="MudBlazor" Version="9.11.0" />
     </ItemGroup>
 
