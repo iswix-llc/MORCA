@@ -4,7 +4,7 @@
 <MudNavMenu>
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
     
-    @if (MsiService.IsOpen)
+    @if (IsOpen)
     {
         <MudDivider Class="my-2" />
         <MudText Typo="Typo.caption" Class="px-4 mt-2">MSI Tools</MudText>
@@ -14,3 +14,12 @@
         <MudNavLink Href="msi-features" Icon="@Icons.Material.Filled.FolderSpecial">Features</MudNavLink>
     }
 </MudNavMenu>
+
+@code {
+    private bool IsOpen => MsiService.IsOpen;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+    }
+}
