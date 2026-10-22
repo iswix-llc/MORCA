@@ -1,4 +1,5 @@
 using IsWiX.WindowsInstaller;
+using MORCA.Models;
 
 namespace MORCA.Services;
 
@@ -166,52 +167,43 @@ public class MsiDatabaseService : IDisposable
     }
 
     /// <summary>
-    /// Reads the database's Summary Information stream as (property, value) pairs, using Orca's
-    /// names for the properties. Properties that are not set come back with an empty value.
+    /// Reads the database's Summary Information stream, decoded the way Orca presents it.
+    /// Properties that are not set come back empty or zero.
     /// </summary>
-    public List<(string Property, string Value)> GetSummaryInformation()
+    public SummaryInformationModel GetSummaryInformation()
     {
         if (_database == null) throw new InvalidOperationException("No database open");
 
         var info = _database.SummaryInfo;
 
-        static string Text(Func<object?> read)
+        static T Read<T>(Func<T> read, T fallback)
         {
-            try
-            {
-                return read() switch
-                {
-                    null => "",
-                    DateTime dt => dt.Year < 1700 ? "" : dt.ToString("g"),
-                    var other => other.ToString() ?? ""
-                };
-            }
-            catch
-            {
-                return "";
-            }
+            try { return read() ?? fallback; }
+            catch { return fallback; }
         }
 
-        return new List<(string, string)>
-        {
-            ("Codepage", Text(() => info.CodePage)),
-            ("Title", Text(() => info.Title)),
-            ("Subject", Text(() => info.Subject)),
-            ("Author", Text(() => info.Author)),
-            ("Keywords", Text(() => info.Keywords)),
-            ("Comments", Text(() => info.Comments)),
-            ("Template (Platform;Languages)", Text(() => info.Template)),
-            ("Last Saved By", Text(() => info.LastSavedBy)),
-            ("Revision Number (Package Code)", Text(() => info.RevisionNumber)),
-            ("Last Printed", Text(() => info.LastPrintTime)),
-            ("Created", Text(() => info.CreateTime)),
-            ("Last Saved", Text(() => info.LastSaveTime)),
-            ("Page Count (Minimum Installer Version)", Text(() => info.PageCount)),
-            ("Word Count (Source Image Flags)", Text(() => info.WordCount)),
-            ("Character Count", Text(() => info.CharacterCount)),
-            ("Creating Application", Text(() => info.CreatingApp)),
-            ("Security", Text(() => info.Security)),
-        };
+        var template = Read(() => info.Template, "");
+        var separator = template.IndexOf(';');
+        var platform = separator < 0 ? template : template[..separator];
+        var languages = separator < 0 ? "" : template[(separator + 1)..];
+
+        var wordCount = Read(() => info.WordCount, 0);
+
+        return new SummaryInformationModel(
+            Title: Read(() => info.Title, ""),
+            Author: Read(() => info.Author, ""),
+            Subject: Read(() => info.Subject, ""),
+            Comments: Read(() => info.Comments, ""),
+            Keywords: Read(() => info.Keywords, ""),
+            Platform: platform,
+            Languages: languages,
+            PackageCode: Read(() => info.RevisionNumber, ""),
+            Schema: Read(() => info.PageCount, 0),
+            Security: Read(() => info.Security, 0),
+            ShortFileNames: (wordCount & 1) != 0,
+            Compressed: (wordCount & 2) != 0,
+            AdministrativeImage: (wordCount & 4) != 0,
+            UacCompliant: (wordCount & 8) != 0);
     }
 
     /// <summary>True if the table has any column definitions in the database's _Columns table.</summary>

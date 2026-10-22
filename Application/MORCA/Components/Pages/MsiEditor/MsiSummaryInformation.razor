@@ -1,4 +1,5 @@
 @page "/msi-summaryinformation"
+@using MORCA.Models
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
 @implements IDisposable
@@ -13,36 +14,99 @@
         No MSI file is open. Click <strong>Open</strong> or <strong>New</strong> in the top menu.
     </MudAlert>
 }
+else if (_error != null)
+{
+    <MudAlert Severity="Severity.Error">Could not read summary information: @_error</MudAlert>
+}
+else if (_info == null)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
 else
 {
-    <MudPaper Class="pa-4">
-        @if (_error != null)
-        {
-            <MudAlert Severity="Severity.Error">Could not read summary information: @_error</MudAlert>
-        }
-        else if (_properties == null)
-        {
-            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
-        }
-        else
-        {
-            <MudTable Items="_properties" Hover="true" Dense="true" Striped="true">
-                <HeaderContent>
-                    <MudTh>Property</MudTh>
-                    <MudTh>Value</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Property">@context.Property</MudTd>
-                    <MudTd DataLabel="Value">@context.Value</MudTd>
-                </RowTemplate>
-            </MudTable>
-        }
+    <MudPaper Class="pa-4" Style="max-width: 640px;">
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Title" Value="@_info.Title" ReadOnly="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Author" Value="@_info.Author" ReadOnly="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Subject" Value="@_info.Subject" ReadOnly="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Comments" Value="@_info.Comments" ReadOnly="true" Lines="3" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Keywords" Value="@_info.Keywords" ReadOnly="true" />
+            </MudItem>
+
+            <MudItem xs="6">
+                <MudSelect T="string" Label="Platform" Value="@_info.Platform" ReadOnly="true">
+                    @foreach (var platform in PlatformOptions)
+                    {
+                        <MudSelectItem T="string" Value="@platform">@platform</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6">
+                <MudTextField T="string" Label="Languages" Value="@_info.Languages" ReadOnly="true" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Package Code" Value="@_info.PackageCode" ReadOnly="true" />
+            </MudItem>
+
+            <MudItem xs="6">
+                <MudTextField T="int" Label="Schema" Value="@_info.Schema" ReadOnly="true" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudSelect T="int" Label="Security" Value="@_info.Security" ReadOnly="true">
+                    <MudSelectItem T="int" Value="0">None</MudSelectItem>
+                    <MudSelectItem T="int" Value="2">Read-only recommended</MudSelectItem>
+                    <MudSelectItem T="int" Value="4">Read-only enforced</MudSelectItem>
+                    @if (_info.Security is not (0 or 2 or 4))
+                    {
+                        <MudSelectItem T="int" Value="@_info.Security">Unknown (@_info.Security)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudText Typo="Typo.subtitle2">Source Image</MudText>
+                    <MudText Typo="Typo.caption">File names:</MudText>
+                    <MudGrid Spacing="0">
+                        <MudItem xs="6">
+                            <MudRadioGroup T="bool" Value="@_info.ShortFileNames" ReadOnly="true">
+                                <MudRadio T="bool" Value="true">Short File Names</MudRadio>
+                                <MudRadio T="bool" Value="false">Long File Names</MudRadio>
+                            </MudRadioGroup>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <div class="d-flex flex-column">
+                                <MudCheckBox T="bool" Value="@_info.Compressed" ReadOnly="true" Label="Compressed by Default" />
+                                <MudCheckBox T="bool" Value="@_info.AdministrativeImage" ReadOnly="true" Label="Administrative Image" />
+                                <MudCheckBox T="bool" Value="@_info.UacCompliant" ReadOnly="true" Label="UAC Compliant" />
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
     </MudPaper>
 }
 
 @code {
-    private List<(string Property, string Value)>? _properties;
+    private SummaryInformationModel? _info;
     private string? _error;
+
+    // The platforms Orca offers, plus whatever value is actually in the file.
+    private IEnumerable<string> PlatformOptions =>
+        new[] { "Intel", "Intel64", "x64", "Arm64" }
+            .Concat(_info is { Platform.Length: > 0 } ? new[] { _info.Platform } : Array.Empty<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
     protected override void OnInitialized()
     {
@@ -61,14 +125,14 @@ else
 
     private void Load()
     {
-        _properties = null;
+        _info = null;
         _error = null;
 
         if (!MsiService.IsOpen) return;
 
         try
         {
-            _properties = MsiService.GetSummaryInformation();
+            _info = MsiService.GetSummaryInformation();
         }
         catch (Exception ex)
         {
