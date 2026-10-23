@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Maui;
+using CommunityToolkit.Maui;
 using Microsoft.Extensions.Logging;
 using MudBlazor.Services;
 using MORCA.Services;
@@ -38,6 +38,9 @@ namespace MORCA
     		builder.Services.AddBlazorWebViewDeveloperTools();
     		builder.Logging.AddDebug();
 #endif
+
+            // Clear out working copies that a crashed or killed earlier run left in the temp folder.
+            _ = Task.Run(() => MsiDatabaseService.DeleteStaleTempFiles(TimeSpan.FromDays(1)));
 
             return builder.Build();
         }

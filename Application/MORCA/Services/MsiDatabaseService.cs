@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using IsWiX.WindowsInstaller;
 using MORCA.Models;
 
@@ -244,6 +245,7 @@ public class MsiDatabaseService : IDisposable
         ResetChangeTracking();
         Generation++;
         StateChanged?.Invoke();
+        DeleteStaleSaveFilesBeside(path, TimeSpan.FromDays(1));
     }
 
     /// <summary>
@@ -354,6 +356,56 @@ public class MsiDatabaseService : IDisposable
 
     private static string NewWorkingPath() =>
         Path.Combine(Path.GetTempPath(), $"MORCA-{Guid.NewGuid():N}.msi");
+
+    /// <summary>
+    /// Deletes working copies that an earlier run left in the temp folder (MORCA-*.msi), for example after the app
+    /// was killed. Files changed within <paramref name="olderThan"/> are kept, since another MORCA window may still
+    /// be using them, and a file that is open elsewhere cannot be deleted and is skipped.
+    /// </summary>
+    public static int DeleteStaleTempFiles(TimeSpan olderThan)
+    {
+        var removed = 0;
+        try
+        {
+            var cutoff = DateTime.UtcNow - olderThan;
+            foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "MORCA-*.msi"))
+            {
+                if (!Regex.IsMatch(Path.GetFileName(file), "^MORCA-[0-9a-f]{32}\\.msi$")) continue;
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) > cutoff) continue;
+                    File.SetAttributes(file, FileAttributes.Normal);
+                    File.Delete(file);
+                    removed++;
+                }
+                catch { /* in use or not ours to delete: leave it */ }
+            }
+        }
+        catch { /* best effort */ }
+        return removed;
+    }
+
+    /// <summary>
+    /// Deletes half-written save files that an interrupted save left beside <paramref name="path"/>: ".name.[guid].morca-tmp"
+    /// (written by MORCA) and ".name.[guid].tmp" (written by the database library), older than <paramref name="olderThan"/>.
+    /// </summary>
+    private static void DeleteStaleSaveFilesBeside(string path, TimeSpan olderThan)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+            if (directory == null || !Directory.Exists(directory)) return;
+            var pattern = new Regex("^" + Regex.Escape("." + Path.GetFileName(path) + ".") + "[0-9a-f]{32}\\.(morca-tmp|tmp)$",
+                RegexOptions.IgnoreCase);
+            var cutoff = DateTime.UtcNow - olderThan;
+            foreach (var file in Directory.EnumerateFiles(directory, "." + Path.GetFileName(path) + ".*"))
+            {
+                if (!pattern.IsMatch(Path.GetFileName(file)) || File.GetLastWriteTimeUtc(file) > cutoff) continue;
+                DeleteQuietly(file);
+            }
+        }
+        catch { /* best effort */ }
+    }
 
     private static void DeleteQuietly(string? path)
     {
