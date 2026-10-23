@@ -4,6 +4,7 @@
 @inject MsiDatabaseService MsiService
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -60,6 +61,24 @@
     private bool _drawerOpen = true;
 
     protected override void OnInitialized() => MsiService.StateChanged += OnMsiStateChanged;
+
+    // A file given on the command line (Windows "Edit with MORCA") is opened as soon as the first page is up.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || MsiService.IsOpen) return;
+        var path = await StartupFile.TakeAsync();
+        if (path == null) return;
+
+        try
+        {
+            MsiService.Open(path);
+            Navigation.NavigateTo("msi-tables");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not open {Path.GetFileName(path)}: {ex.Message}", Severity.Error);
+        }
+    }
 
     private void OnMsiStateChanged() => InvokeAsync(StateHasChanged);
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!--
+      Adds "Edit with MORCA" to the right-click menu of .msi and .msm files in Windows Explorer. The verbs are
+      added under SystemFileAssociations, so they sit beside the existing ones (Install, Edit with Orca...) and
+      do not change which program opens a file on double-click. Explorer runs: MORCA.exe "path\to\file.msi".
+      On Windows 11 the entry is under "Show more options". HKCR in a per-machine install is HKLM\Software\Classes.
+    -->
+    <ComponentGroup Id="MORCAShellIntegration" Directory="INSTALLLOCATION">
+      <Component Id="EditWithMorcaMsi" Guid="*">
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msi\shell\EditWithMORCA" Type="string" Value="Edit with MORCA" KeyPath="yes" />
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msi\shell\EditWithMORCA" Name="Icon" Type="string" Value="&quot;[INSTALLLOCATION]App\MORCA.exe&quot;,0" />
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msi\shell\EditWithMORCA\command" Type="string" Value="&quot;[INSTALLLOCATION]App\MORCA.exe&quot; &quot;%1&quot;" />
+      </Component>
+      <Component Id="EditWithMorcaMsm" Guid="*">
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msm\shell\EditWithMORCA" Type="string" Value="Edit with MORCA" KeyPath="yes" />
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msm\shell\EditWithMORCA" Name="Icon" Type="string" Value="&quot;[INSTALLLOCATION]App\MORCA.exe&quot;,0" />
+        <RegistryValue Root="HKCR" Key="SystemFileAssociations\.msm\shell\EditWithMORCA\command" Type="string" Value="&quot;[INSTALLLOCATION]App\MORCA.exe&quot; &quot;%1&quot;" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

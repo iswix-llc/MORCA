@@ -25,6 +25,7 @@
 		</StandardDirectory>
 		<Feature Id="MORCA" Title="MORCA" Description="Installs all the files needed for MORCA" Level="1" AllowAdvertise="no" ConfigurableDirectory="INSTALLLOCATION">
 			<ComponentGroupRef Id="MORCAFiles"/>
+			<ComponentGroupRef Id="MORCAShellIntegration"/>
 			<ComponentGroupRef Id="MORCADynamicFiles"/>
 		</Feature>
 	</Package>
