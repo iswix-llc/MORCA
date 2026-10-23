@@ -2,7 +2,6 @@
 @implements IDisposable
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
-@inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
@@ -88,7 +87,6 @@
             if (result != null)
             {
                 MsiService.Open(result.FullPath);
-                Navigation.NavigateTo("msi-summaryinformation");
             }
         }
         catch (Exception ex)
@@ -104,7 +102,6 @@
         try
         {
             MsiService.CreateUntitled();
-            Navigation.NavigateTo("msi-summaryinformation");
         }
         catch (Exception ex)
         {

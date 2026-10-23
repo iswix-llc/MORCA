@@ -1,0 +1,58 @@
+<MudDialog>
+    <DialogContent>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="SelectAll">Select All</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="SelectNone">Select None</MudButton>
+        </div>
+
+        <div style="display:flex; flex-direction:column; max-height:50vh; min-width:280px; overflow-y:auto;">
+            @foreach (var table in Tables)
+            {
+                var name = table;
+                <MudCheckBox T="bool"
+                             Value="@_selected.Contains(name)"
+                             ValueChanged="@((bool on) => Toggle(name, on))"
+                             Label="@name"
+                             Size="Size.Small" />
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Ok" Disabled="@(_selected.Count == 0)">Export...</MudButton>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>The tables that can be exported.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Tables { get; set; } = default!;
+
+    /// <summary>A table to start with only that one ticked. Leave null to start with every table ticked.</summary>
+    [Parameter] public string? Selected { get; set; }
+
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+
+    protected override void OnInitialized()
+    {
+        if (Selected != null && Tables.Contains(Selected))
+            _selected.Add(Selected);
+        else
+            SelectAll();
+    }
+
+    private void Toggle(string table, bool on)
+    {
+        if (on) _selected.Add(table); else _selected.Remove(table);
+    }
+
+    private void SelectAll() => _selected.UnionWith(Tables);
+
+    private void SelectNone() => _selected.Clear();
+
+    // Keep the list's own order, not the order the boxes were ticked in.
+    private void Ok() => MudDialog.Close(DialogResult.Ok(Tables.Where(_selected.Contains).ToList()));
+
+    private void Cancel() => MudDialog.Cancel();
+}

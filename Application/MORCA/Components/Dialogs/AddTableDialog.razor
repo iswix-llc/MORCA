@@ -1,0 +1,56 @@
+<MudDialog>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="_filter" Immediate="true" Label="Filter" Placeholder="Type to narrow the list"
+                      Margin="Margin.Dense" Clearable="true" AutoFocus="true" Class="mb-2" />
+
+        <div style="display:flex; flex-direction:column; height:45vh; min-width:280px; overflow-y:auto;
+                    border:1px solid var(--mud-palette-lines-inputs); border-radius:4px; padding:4px 8px;">
+            @foreach (var table in Visible)
+            {
+                var name = table;
+                <MudCheckBox T="bool"
+                             Value="@_selected.Contains(name)"
+                             ValueChanged="@((bool on) => Toggle(name, on))"
+                             Label="@name"
+                             Size="Size.Small" />
+            }
+            @if (!Visible.Any())
+            {
+                <MudText Typo="Typo.body2" Style="opacity:.6" Class="pa-2">No standard table matches.</MudText>
+            }
+        </div>
+
+        <MudText Typo="Typo.caption" Class="mt-2" Style="opacity:.7">
+            @_selected.Count selected. Tables already in this database are not listed.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Ok" Disabled="@(_selected.Count == 0)">Add</MudButton>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>The standard tables that can still be added.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Tables { get; set; } = default!;
+
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string? _filter;
+
+    private IEnumerable<string> Visible =>
+        string.IsNullOrWhiteSpace(_filter)
+            ? Tables
+            : Tables.Where(t => t.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void Toggle(string table, bool on)
+    {
+        if (on) _selected.Add(table); else _selected.Remove(table);
+    }
+
+    // Keep the list's own order, not the order the boxes were ticked in.
+    private void Ok() => MudDialog.Close(DialogResult.Ok(Tables.Where(_selected.Contains).ToList()));
+
+    private void Cancel() => MudDialog.Cancel();
+}

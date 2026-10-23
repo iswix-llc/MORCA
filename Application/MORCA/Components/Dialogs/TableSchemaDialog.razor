@@ -1,0 +1,147 @@
+@using MORCA.Models
+
+<MudDialog>
+    <DialogContent>
+        <style>
+            .ts-columns { border: 1px solid var(--mud-palette-lines-inputs); border-radius: 4px; height: 260px; overflow-y: auto; }
+            .ts-col-item { padding: 4px 10px; cursor: pointer; user-select: none; }
+            .ts-col-item:hover { background: var(--mud-palette-action-default-hover); }
+            .ts-col-item.selected { background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); }
+        </style>
+
+        <div style="display:flex; gap:24px; align-items:flex-end; margin-bottom:8px;">
+            <MudTextField T="string" @bind-Value="_table.Name" Immediate="true" Label="Table" Style="flex:1"
+                          ReadOnly="@IsAdjusting" AutoFocus="@(!IsAdjusting)" MaxLength="@MsiTableDefinition.MaxTableNameLength" />
+            <MudNumericField T="int" @bind-Value="_table.PrimaryKeys" Immediate="true" Label="Primary Keys"
+                             Min="0" Max="@(Math.Max(_table.Columns.Count, 0))" Style="width:140px" />
+        </div>
+
+        <div style="display:flex; gap:16px;">
+            <div style="width:200px; display:flex; flex-direction:column;">
+                <MudText Typo="Typo.caption">Columns:</MudText>
+                <div class="ts-columns">
+                    @for (var i = 0; i < _table.Columns.Count; i++)
+                    {
+                        var column = _table.Columns[i];
+                        var isKey = i < _table.PrimaryKeys;
+                        <div class="ts-col-item @(column == _selected ? "selected" : "")" @onclick="() => _selected = column">
+                            @(string.IsNullOrEmpty(column.Name) ? "(unnamed)" : column.Name)@(isKey ? " 🔑" : "")
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:8px; width:120px; padding-top:20px;">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="NewColumn">New</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="RemoveColumn" Disabled="@(_selected == null)">Remove</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Move(-1)" Disabled="@(!CanMove(-1))">Move Up</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Move(1)" Disabled="@(!CanMove(1))">Move Down</MudButton>
+            </div>
+
+            <MudPaper Outlined="true" Class="pa-3" Style="flex:1; min-width:260px;">
+                <MudText Typo="Typo.caption">Column Schema:</MudText>
+                @if (_selected != null)
+                {
+                    <MudTextField T="string" @bind-Value="_selected.Name" Immediate="true" Label="Name" Margin="Margin.Dense" />
+                    <MudSelect T="MsiColumnKind" @bind-Value="_selected.Kind" Label="Type" Margin="Margin.Dense">
+                        @foreach (var kind in Enum.GetValues<MsiColumnKind>())
+                        {
+                            <MudSelectItem T="MsiColumnKind" Value="@kind">@kind.Display()</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudNumericField T="int" @bind-Value="_selected.Length" Label="Length" Margin="Margin.Dense"
+                                     Min="0" Max="255" Disabled="@(!_selected.Kind.HasLength())" />
+                    <MudCheckBox T="bool" @bind-Value="_selected.Nullable" Label="Nullable" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2" Style="opacity:.6">Select or add a column to edit it.</MudText>
+                }
+            </MudPaper>
+        </div>
+
+        @if (IsAdjusting)
+        {
+            <MudText Typo="Typo.caption" Class="mt-3" Style="opacity:.7">
+                Existing rows are kept for each column that keeps its name. Changing a column's type or
+                length converts its data, and changing a column to or from Binary discards that data.
+            </MudText>
+        }
+
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Ok" Disabled="@(!_table.Columns.Any() || string.IsNullOrWhiteSpace(_table.Name))">OK</MudButton>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Names of the other tables in the database, to reject duplicates.</summary>
+    [Parameter] public IReadOnlyCollection<string> ExistingTables { get; set; } = Array.Empty<string>();
+
+    /// <summary>The table to adjust. Leave null to define a new table.</summary>
+    [Parameter] public MsiTableDefinition? Existing { get; set; }
+
+    private bool IsAdjusting => Existing != null;
+
+    private MsiTableDefinition _table = new();
+    private MsiColumnDefinition? _selected;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Existing == null) return;
+
+        _table = Existing.Clone();
+        _selected = _table.Columns.FirstOrDefault();
+    }
+
+    private void NewColumn()
+    {
+        var column = new MsiColumnDefinition { Name = $"Column{_table.Columns.Count + 1}" };
+        _table.Columns.Add(column);
+        if (_table.Columns.Count == 1 && _table.PrimaryKeys == 0) _table.PrimaryKeys = 1;
+        _selected = column;
+        _error = null;
+    }
+
+    private void RemoveColumn()
+    {
+        if (_selected == null) return;
+
+        var index = _table.Columns.IndexOf(_selected);
+        _table.Columns.Remove(_selected);
+        if (_table.PrimaryKeys > _table.Columns.Count) _table.PrimaryKeys = _table.Columns.Count;
+        _selected = _table.Columns.Count == 0 ? null : _table.Columns[Math.Min(index, _table.Columns.Count - 1)];
+        _error = null;
+    }
+
+    private bool CanMove(int delta)
+    {
+        if (_selected == null) return false;
+        var target = _table.Columns.IndexOf(_selected) + delta;
+        return target >= 0 && target < _table.Columns.Count;
+    }
+
+    private void Move(int delta)
+    {
+        if (!CanMove(delta)) return;
+        var index = _table.Columns.IndexOf(_selected!);
+        _table.Columns.RemoveAt(index);
+        _table.Columns.Insert(index + delta, _selected!);
+    }
+
+    private void Ok()
+    {
+        _error = _table.Validate(ExistingTables);
+        if (_error == null) MudDialog.Close(DialogResult.Ok(_table));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,114 @@
+@using MORCA.Models
+@using System.Globalization
+
+<MudDialog>
+    <DialogContent>
+        <div style="display:flex; flex-direction:column; gap:4px; min-width:340px; max-height:60vh; overflow-y:auto; padding-top:4px;">
+            @for (var i = 0; i < Definition.Columns.Count; i++)
+            {
+                var column = Definition.Columns[i];
+                var name = column.Name;
+                var isKey = i < Definition.PrimaryKeys;
+                var isBinary = column.Kind == MsiColumnKind.Binary;
+
+                <MudTextField T="string"
+                              Value="@_values[name]"
+                              ValueChanged="@((string v) => _values[name] = v ?? "")"
+                              Immediate="true"
+                              Margin="Margin.Dense"
+                              Label="@LabelFor(column, isKey)"
+                              HelperText="@HelperFor(column)"
+                              Disabled="@isBinary"
+                              ReadOnly="@(IsEdit && isKey)"
+                              AutoFocus="@(i == _firstEditable)"
+                              MaxLength="@(column.Kind.HasLength() && column.Length > 0 ? column.Length : 524288)" />
+            }
+        </div>
+
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Ok">OK</MudButton>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>The table's schema.</summary>
+    [Parameter, EditorRequired] public MsiTableDefinition Definition { get; set; } = default!;
+
+    /// <summary>The row to edit, keyed by column name. Leave null to add a row.</summary>
+    [Parameter] public IReadOnlyDictionary<string, object?>? Row { get; set; }
+
+    private bool IsEdit => Row != null;
+
+    private readonly Dictionary<string, string> _values = new();
+    private string? _error;
+    private int _firstEditable;
+
+    protected override void OnInitialized()
+    {
+        foreach (var column in Definition.Columns)
+        {
+            object? existing = null;
+            Row?.TryGetValue(column.Name, out existing);
+            _values[column.Name] = column.Kind == MsiColumnKind.Binary
+                ? (IsEdit ? "(binary data is kept as it is)" : "(binary data cannot be set yet)")
+                : Convert.ToString(existing, CultureInfo.InvariantCulture) ?? "";
+        }
+
+        // When editing, the key columns are fixed, so start on the first column that can change.
+        _firstEditable = IsEdit ? Math.Min(Definition.PrimaryKeys, Definition.Columns.Count - 1) : 0;
+    }
+
+    private static string LabelFor(MsiColumnDefinition column, bool isKey) =>
+        $"{column.Name}{(isKey ? " (key)" : "")}{(column.Nullable ? "" : " *")}";
+
+    private static string HelperFor(MsiColumnDefinition column) => column.Kind switch
+    {
+        MsiColumnKind.Integer => "Integer, -32767 to 32767",
+        MsiColumnKind.LongInteger => "Long integer",
+        MsiColumnKind.Binary => "Binary",
+        _ => column.Length > 0 ? $"{column.Kind.Display()}, up to {column.Length} characters" : column.Kind.Display()
+    };
+
+    private void Ok()
+    {
+        var result = new Dictionary<string, object?>();
+
+        foreach (var column in Definition.Columns)
+        {
+            if (column.Kind == MsiColumnKind.Binary) continue;
+
+            var text = _values[column.Name];
+            if (text.Length == 0)
+            {
+                if (!column.Nullable) { _error = $"'{column.Name}' is required."; return; }
+                result[column.Name] = null;
+            }
+            else if (column.Kind.IsNumber())
+            {
+                if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+                { _error = $"'{column.Name}' must be a whole number."; return; }
+                if (column.Kind == MsiColumnKind.Integer && (number < -32767 || number > 32767))
+                { _error = $"'{column.Name}' must be between -32767 and 32767 (use a Long Integer column for larger values)."; return; }
+                result[column.Name] = number;
+            }
+            else
+            {
+                if (column.Length > 0 && text.Length > column.Length)
+                { _error = $"'{column.Name}' can be at most {column.Length} characters."; return; }
+                result[column.Name] = text;
+            }
+        }
+
+        MudDialog.Close(DialogResult.Ok(result));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

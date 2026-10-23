@@ -1,6 +1,11 @@
 @page "/msi-tables"
 @using MORCA.Services
 @inject MsiDatabaseService MsiService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@using MORCA.Components.Dialogs
+@using MORCA.Models
 @implements IDisposable
 
 <PageTitle>Table Editor - MORCA</PageTitle>
@@ -42,6 +47,7 @@
                 justify-content: flex-start;
                 text-align: left;
                 white-space: nowrap;
+                text-transform: none; /* show table names exactly as they are */
             }
             .tables-title {
                     padding: 16px 16px 0 16px;
@@ -55,6 +61,22 @@
                     flex-direction: column;
                     overflow: hidden;
                     padding: 16px;
+                }
+
+                .find-bar {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin-bottom: 12px;
+                    flex-shrink: 0;
+                }
+
+                .find-hit {
+                    background: var(--mud-palette-warning) !important;
+                }
+
+                .find-hit * {
+                    color: var(--mud-palette-warning-text) !important;
                 }
 
                 .content-title {
@@ -73,6 +95,17 @@
                 <MudText Typo="Typo.subtitle2" Class="tables-title">
                     <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
                     Tables
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" Class="ml-2"
+                             AriaLabel="Tables menu" title="Tables menu">
+                        <MudMenuItem OnClick="AddTableAsync">Add Table...</MudMenuItem>
+                        <MudMenuItem OnClick="AddCustomTableAsync">Add Custom Table...</MudMenuItem>
+                        <MudMenuItem OnClick="DropTableAsync" Disabled="@(!CanDropSelected)">Drop Table...</MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem OnClick="ExportTablesAsync">Export Tables...</MudMenuItem>
+                        <MudMenuItem OnClick="ImportTablesAsync">Import Tables...</MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem OnClick="AdjustSchemaAsync" Disabled="@(!CanAdjustSelected)">Adjust Schema...</MudMenuItem>
+                    </MudMenu>
                 </MudText>
                 <div class="tables-list">
                     @if (_tables != null)
@@ -104,41 +137,65 @@
             </div>
 
             <div class="content-panel">
+                <div class="find-bar">
+                    <MudTextField T="string" Value="_findText" ValueChanged="OnFindTextChanged" Immediate="true" Clearable="true"
+                                  Placeholder="Find in all tables" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  AriaLabel="Find" OnKeyDown="OnFindKeyDown" Style="max-width:320px" />
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="FindNextAsync"
+                               Disabled="@string.IsNullOrWhiteSpace(_findText)">Find Next</MudButton>
+                    <MudText Typo="Typo.caption" Style="opacity:.8">@_findStatus</MudText>
+                </div>
+
                 @if (_selectedTable != null)
                 {
-                    <MudText Typo="Typo.subtitle2" Class="content-title">
-                        <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
-                        @_selectedTable
-                    </MudText>
+                    <div class="content-title" style="display:flex; align-items:center; gap:8px;">
+                        <MudText Typo="Typo.subtitle2">
+                            <MudIcon Icon="@Icons.Material.Filled.ViewWeek" Size="Size.Small" Class="mr-2" />
+                            @_selectedTable
+                        </MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="AddRowAsync" Disabled="@(!CanEditRows)">Add Row</MudButton>
+                    </div>
 
                     <div class="content-area">
                         @if (_tableData != null)
                         {
-                            @if (_tableData.Value.Rows.Count == 0)
-                            {
-                                <MudAlert Severity="Severity.Info">No rows in this table.</MudAlert>
-                            }
-                            else
-                            {
-                                <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
-                                    <HeaderContent>
-                                        @foreach (var col in _tableData.Value.Columns)
-                                        {
-                                            <MudTh>@col.Name</MudTh>
-                                        }
-                                    </HeaderContent>
-                                    <RowTemplate>
-                                        @foreach (var col in _tableData.Value.Columns)
-                                        {
-                                            <MudTd DataLabel="@col.Name">
-                                                <MudText Typo="Typo.caption">
-                                                    @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
-                                                </MudText>
-                                            </MudTd>
-                                        }
-                                    </RowTemplate>
-                                </MudTable>
-                            }
+                            <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
+                                <HeaderContent>
+                                    @if (CanEditRows)
+                                    {
+                                        <MudTh Style="width:90px"></MudTh>
+                                    }
+                                    @foreach (var col in _tableData.Value.Columns)
+                                    {
+                                        <MudTh>@col.Name</MudTh>
+                                    }
+                                </HeaderContent>
+                                <RowTemplate>
+                                    @if (CanEditRows)
+                                    {
+                                        <MudTd Style="white-space:nowrap">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" title="Edit row" aria-label="Edit row"
+                                                           OnClick="@(() => EditRowAsync(context))" />
+                                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" title="Delete row" aria-label="Delete row"
+                                                           OnClick="@(() => DeleteRowAsync(context))" />
+                                        </MudTd>
+                                    }
+                                    @foreach (var col in _tableData.Value.Columns)
+                                    {
+                                        <MudTd DataLabel="@col.Name" Class="@(IsMatch(context, col.Name) ? "find-hit" : null)">
+                                            <MudText Typo="Typo.caption">
+                                                @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
+                                            </MudText>
+                                        </MudTd>
+                                    }
+                                </RowTemplate>
+                                <NoRecordsContent>
+                                    <MudText Typo="Typo.caption">No rows in this table.</MudText>
+                                </NoRecordsContent>
+                            </MudTable>
                         }
                         else
                         {
@@ -160,10 +217,106 @@
     private string? _selectedTable;
     private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
 
-    // Width sized to the longest table name (names render uppercase, ~1.1ch per char) plus
+    // Width sized to the longest table name (~1.1ch per char, since names are mixed case) plus
     // room for the list padding, button padding and icon.
     private string TablesPanelWidth =>
         $"calc({(_tables is { Count: > 0 } ? _tables.Max(t => t.Length) : 15) * 1.1:0.#}ch + 100px)";
+
+    // --- Find / Find Next across all tables ---
+    private string? _findText;
+    private string? _findStatus;
+    private FindHit? _match;        // the cell highlighted now
+    private FindHit? _firstMatch;   // first hit of this search; reaching it again means every match has been seen
+    private bool _scrollToMatch;
+
+    private void OnFindTextChanged(string? text)
+    {
+        _findText = text;
+        ResetFind();
+    }
+
+    private void ResetFind()
+    {
+        _match = null;
+        _firstMatch = null;
+        _findStatus = null;
+    }
+
+    private async Task OnFindKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await FindNextAsync();
+    }
+
+    private Task FindNextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_findText) || _tables is not { Count: > 0 }) return Task.CompletedTask;
+
+        try
+        {
+            var result = TableFinder.FindNext(_tables, LoadForFind, _findText, _selectedTable ?? _tables[0], _match);
+            if (result is not { } hit)
+            {
+                ResetFind();
+                _findStatus = "No matches found.";
+                Snackbar.Add($"No matches found for \"{_findText}\".", Severity.Info);
+                return Task.CompletedTask;
+            }
+
+            var wrapped = _firstMatch != null && hit == _firstMatch;
+            _firstMatch ??= hit;
+
+            if (hit.Table != _selectedTable) SelectTable(hit.Table, keepFind: true);
+            _match = hit;
+            _scrollToMatch = true;
+
+            if (wrapped)
+            {
+                _findStatus = "No more matches found. Back at the first match.";
+                Snackbar.Add("No more matches found. Back at the first match.", Severity.Info);
+            }
+            else
+            {
+                _findStatus = $"{hit.Table} › {hit.Column}, row {hit.Row + 1}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Search failed: {ex.Message}", Severity.Error);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private FindTableContent? LoadForFind(string table)
+    {
+        try
+        {
+            var columns = MsiService.GetTableColumns(table).Select(c => c.Name).ToList();
+            return new FindTableContent(columns, MsiService.GetTableRows(table));
+        }
+        catch
+        {
+            return null; // a table that cannot be read is skipped
+        }
+    }
+
+    private bool IsMatch(Dictionary<string, object?> row, string column) =>
+        _match is { } m && m.Table == _selectedTable && m.Column == column &&
+        _tableData is { } data && m.Row < data.Rows.Count && ReferenceEquals(data.Rows[m.Row], row);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollToMatch) return;
+        _scrollToMatch = false;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.querySelector('.find-hit')?.scrollIntoView({ block: 'center', inline: 'nearest' })");
+        }
+        catch
+        {
+            // scrolling is a nicety; ignore if it is not available
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -192,8 +345,320 @@
         }
     }
 
-    private void SelectTable(string tableName)
+    private async Task AddTableAsync()
     {
+        try
+        {
+            // Offer the standard tables this database does not have yet.
+            var existing = MsiService.GetTableNames();
+            var available = StandardTables.Names
+                .Where(name => !existing.Contains(name, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            if (available.Count == 0)
+            {
+                Snackbar.Add("This database already has every standard table.", Severity.Info);
+                return;
+            }
+
+            var parameters = new DialogParameters<AddTableDialog> { { x => x.Tables, available } };
+            var dialog = await DialogService.ShowAsync<AddTableDialog>("Add Table", parameters,
+                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not List<string> chosen || chosen.Count == 0) return;
+
+            var created = new List<string>();
+            var failed = new List<string>();
+            foreach (var name in chosen)
+            {
+                try
+                {
+                    MsiService.CreateTable(StandardTables.Get(name)!);
+                    created.Add(name);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add($"{name}: {ex.Message}");
+                }
+            }
+
+            LoadTables();
+            if (created.Count > 0) SelectTable(created[0]);
+
+            if (failed.Count > 0)
+                Snackbar.Add($"Added {created.Count}, {failed.Count} failed. {string.Join(" ", failed)}", Severity.Error);
+            else
+                Snackbar.Add($"Added {(created.Count == 1 ? $"table {created[0]}" : $"{created.Count} tables")}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add tables: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AddCustomTableAsync()
+    {
+        var parameters = new DialogParameters<TableSchemaDialog>
+        {
+            { x => x.ExistingTables, MsiService.GetTableNames() }
+        };
+        var dialog = await DialogService.ShowAsync<TableSchemaDialog>("Table Schema", parameters,
+            new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not MsiTableDefinition definition) return;
+
+        try
+        {
+            MsiService.CreateTable(definition);
+            // StateChanged (from MarkDirty) only fires on the first change, so reload explicitly.
+            LoadTables();
+            SelectTable(definition.Name);
+            Snackbar.Add($"Created custom table {definition.Name}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create custom table: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // The engine refuses to adjust or drop the system tables; _Validation is an ordinary table that may be dropped.
+    private static readonly string[] SystemTables = { "_Tables", "_Columns", "_Streams", "_Storages" };
+
+    private bool CanAdjustSelected => _selectedTable != null && !_selectedTable.StartsWith('_');
+
+    private bool CanDropSelected => _selectedTable != null &&
+        !SystemTables.Contains(_selectedTable, StringComparer.OrdinalIgnoreCase);
+
+    private bool CanEditRows => CanDropSelected; // everything except the engine's system tables
+
+    private async Task AddRowAsync()
+    {
+        if (_selectedTable == null) return;
+        var tableName = _selectedTable;
+
+        try
+        {
+            var parameters = new DialogParameters<RowEditDialog>
+            {
+                { x => x.Definition, MsiService.GetTableDefinition(tableName) }
+            };
+            var dialog = await DialogService.ShowAsync<RowEditDialog>($"Add row to {tableName}", parameters,
+                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not Dictionary<string, object?> values) return;
+
+            MsiService.InsertRow(tableName, values);
+            SelectTable(tableName);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add row: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EditRowAsync(Dictionary<string, object?> row)
+    {
+        if (_selectedTable == null) return;
+        var tableName = _selectedTable;
+
+        try
+        {
+            var definition = MsiService.GetTableDefinition(tableName);
+            var parameters = new DialogParameters<RowEditDialog>
+            {
+                { x => x.Definition, definition },
+                { x => x.Row, row }
+            };
+            var dialog = await DialogService.ShowAsync<RowEditDialog>($"Edit row in {tableName}", parameters,
+                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not Dictionary<string, object?> values) return;
+
+            MsiService.UpdateRow(tableName, values);
+            SelectTable(tableName);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not update row: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteRowAsync(Dictionary<string, object?> row)
+    {
+        if (_selectedTable == null) return;
+        var tableName = _selectedTable;
+
+        try
+        {
+            var definition = MsiService.GetTableDefinition(tableName);
+            var keys = definition.Columns.Take(definition.PrimaryKeys).Select(c => c.Name).ToList();
+            var keyValues = keys.ToDictionary(k => k, k => row.TryGetValue(k, out var v) ? v : null);
+
+            var confirmed = await DialogService.ShowMessageBoxAsync(
+                "Delete row",
+                $"Delete the row {string.Join(", ", keys.Select(k => $"{k} = {keyValues[k]}"))} from {tableName}?",
+                yesText: "Delete",
+                cancelText: "Cancel");
+            if (confirmed != true) return;
+
+            MsiService.DeleteRow(tableName, keyValues);
+            SelectTable(tableName);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete row: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportTablesAsync()
+    {
+        try
+        {
+            var parameters = new DialogParameters<ExportTablesDialog>
+            {
+                { x => x.Tables, MsiService.GetTableNames() }
+            };
+            var dialog = await DialogService.ShowAsync<ExportTablesDialog>("Export Tables", parameters,
+                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not List<string> chosen || chosen.Count == 0) return;
+
+            var folder = await CommunityToolkit.Maui.Storage.FolderPicker.Default.PickAsync(CancellationToken.None);
+            if (!folder.IsSuccessful)
+            {
+                // Cancelling the picker is not an error.
+                if (folder.Exception is { } pickError && !pickError.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+                    Snackbar.Add($"Could not choose a folder: {pickError.Message}", Severity.Error);
+                return;
+            }
+
+            MsiService.ExportTables(chosen, folder.Folder.Path);
+            Snackbar.Add($"Exported {chosen.Count} table{(chosen.Count == 1 ? "" : "s")} to {folder.Folder.Path}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not export tables: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImportTablesAsync()
+    {
+        try
+        {
+            var folder = await CommunityToolkit.Maui.Storage.FolderPicker.Default.PickAsync(CancellationToken.None);
+            if (!folder.IsSuccessful)
+            {
+                if (folder.Exception is { } pickError && !pickError.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+                    Snackbar.Add($"Could not choose a folder: {pickError.Message}", Severity.Error);
+                return;
+            }
+
+            var path = folder.Folder.Path;
+            if (path.Contains("://"))
+                throw new NotSupportedException("This platform returned a folder that cannot be read directly.");
+
+            var files = Directory.GetFiles(path, "*.idt");
+            if (files.Length == 0)
+            {
+                Snackbar.Add("That folder has no .idt files.", Severity.Warning);
+                return;
+            }
+
+            // Importing a table that is already there replaces it, so say which ones before doing it.
+            var existing = MsiService.GetTableNames();
+            var replacing = files
+                .Select(MsiDatabaseService.ReadIdtTableName)
+                .Where(name => name != null && existing.Contains(name, StringComparer.Ordinal))
+                .ToList();
+            if (replacing.Count > 0)
+            {
+                var confirmed = await DialogService.ShowMessageBoxAsync(
+                    "Replace tables",
+                    $"These tables already exist and will be replaced: {string.Join(", ", replacing)}.",
+                    yesText: "Replace",
+                    cancelText: "Cancel");
+                if (confirmed != true) return;
+            }
+
+            var outcome = MsiService.ImportIdtFiles(files);
+
+            LoadTables();
+            if (outcome.Imported.Count > 0) SelectTable(outcome.Imported[0]);
+
+            var notes = new List<string>();
+            if (outcome.Skipped.Count > 0)
+                notes.Add($"Skipped {string.Join(", ", outcome.Skipped)} (tables starting with an underscore cannot be imported)");
+            notes.AddRange(outcome.Failed.Select(f => $"{f.File}: {f.Error}"));
+
+            if (outcome.Failed.Count > 0)
+                Snackbar.Add($"Imported {outcome.Imported.Count}, {outcome.Failed.Count} failed. {string.Join(" ", notes)}", Severity.Error);
+            else if (outcome.Imported.Count == 0)
+                Snackbar.Add($"Nothing imported. {string.Join(" ", notes)}", Severity.Warning);
+            else
+                Snackbar.Add($"Imported {outcome.Imported.Count} table{(outcome.Imported.Count == 1 ? "" : "s")}. {string.Join(" ", notes)}".TrimEnd(), Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not import tables: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AdjustSchemaAsync()
+    {
+        if (_selectedTable == null) return;
+        var tableName = _selectedTable;
+
+        try
+        {
+            var parameters = new DialogParameters<TableSchemaDialog>
+            {
+                { x => x.Existing, MsiService.GetTableDefinition(tableName) },
+                { x => x.ExistingTables, MsiService.GetTableNames().Where(t => t != tableName).ToList() }
+            };
+            var dialog = await DialogService.ShowAsync<TableSchemaDialog>("Table Schema", parameters,
+                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true });
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not MsiTableDefinition definition) return;
+
+            MsiService.AdjustTable(definition);
+            LoadTables();
+            SelectTable(tableName);
+            Snackbar.Add($"Adjusted schema of {tableName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not adjust table: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DropTableAsync()
+    {
+        if (_selectedTable == null) return;
+        var tableName = _selectedTable;
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Drop table",
+            $"Drop table {tableName} and all of its rows? This cannot be undone.",
+            yesText: "Drop",
+            cancelText: "Cancel");
+        if (confirmed != true) return;
+
+        try
+        {
+            MsiService.DropTable(tableName);
+            LoadTables();
+            Snackbar.Add($"Dropped table {tableName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not drop table: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void SelectTable(string tableName, bool keepFind = false)
+    {
+        // Choosing a table by hand, or reloading one after an edit, ends the current search.
+        if (!keepFind) ResetFind();
+
         try
         {
             _selectedTable = tableName;
