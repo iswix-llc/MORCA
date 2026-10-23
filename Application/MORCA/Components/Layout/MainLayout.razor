@@ -6,21 +6,48 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-<MudThemeProvider />
+<MudThemeProvider Theme="_theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+<style>
+    .morca-brand { display: flex; align-items: center; gap: 10px; margin-left: 12px; }
+    .morca-wordmark { font-size: 1.25rem; font-weight: 700; letter-spacing: .22em; }
+    .morca-file {
+        display: flex; align-items: center; gap: 6px; margin-left: 24px; padding: 3px 12px;
+        border-radius: 999px; background: rgba(255, 255, 255, .16); font-size: .85rem; max-width: 40vw;
+    }
+    .morca-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+
 <MudLayout>
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" aria-label="Toggle navigation menu" />
-        <MudText Typo="Typo.h6" Class="ml-3">MORCA</MudText>
-        
+        <div class="morca-brand">
+            @* The MORCA mark: an orca's dorsal fin rising out of a table grid. *@
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="18 14 164 176" width="30" height="32" aria-hidden="true">
+                <g fill="#c9c4ff">
+                    @for (var r = 0; r < 3; r++)
+                    {
+                        @for (var c = 0; c < 7; c++)
+                        {
+                            <rect x="@(System.FormattableString.Invariant($"{21.5 + c * 23}"))" y="@(132 + r * 18)" width="19" height="14" rx="4" opacity="@(r == 0 ? "0.9" : r == 1 ? "0.55" : "0.3")" />
+                        }
+                    }
+                </g>
+                <path fill="#fff" d="M66 140 C74 112 90 70 112 24 C116 17 121 20 121 28 C121 70 126 112 142 140 C130 132 118 132 106 134 C92 134 78 136 66 140 Z" />
+                <path fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".7" d="M34 146 C46 138 56 138 64 142 M146 142 C154 138 164 138 176 146" />
+            </svg>
+            <span class="morca-wordmark">MORCA</span>
+        </div>
+
         @if (MsiService.IsOpen)
         {
-            <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
-                📦 @MsiService.DisplayName@(MsiService.State switch { MORCA.Services.ChangeState.Dirty => "*", MORCA.Services.ChangeState.Unknown => "?", _ => "" })
-            </MudText>
+            <div class="morca-file">
+                <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" />
+                <span>@MsiService.DisplayName@(MsiService.State switch { MORCA.Services.ChangeState.Dirty => "*", MORCA.Services.ChangeState.Unknown => "?", _ => "" })</span>
+            </div>
         }
         
         <MudSpacer />
@@ -59,6 +86,20 @@
 
 @code {
     private bool _drawerOpen = true;
+
+    // The MORCA palette: the indigo of the logo, with its sky blue as the accent.
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#5B4BDB",
+            Secondary = "#2AA9D0",
+            AppbarBackground = "#4A3BC4",
+            AppbarText = "#FFFFFF",
+            DrawerBackground = "#FFFFFF",
+            Background = "#F6F6FB",
+        },
+    };
 
     protected override void OnInitialized() => MsiService.StateChanged += OnMsiStateChanged;
 
