@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using IsWiX.WindowsInstaller;
 using MORCA.Models;
 
@@ -27,8 +29,15 @@ public class MsiDatabaseService : IDisposable
     public bool CanSaveInPlace =>
         _filePath != null && !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
 
-    /// <summary>True when there are changes that have not been saved.</summary>
-    public bool IsDirty { get; private set; }
+    /// <summary>Whether the document differs from how it was when opened or last saved.</summary>
+    public ChangeState State => _state;
+    private ChangeState _state = ChangeState.Clean;
+
+    /// <summary>True unless the document is known to be unchanged: there may be changes that have not been saved.</summary>
+    public bool IsDirty => _state != ChangeState.Clean;
+
+    /// <summary>Changes every time a different database is opened, created or closed (not on edits or saves).</summary>
+    public int Generation { get; private set; }
 
     /// <summary>Raised after a database is opened, created, modified, saved or closed.</summary>
     public event Action? StateChanged;
@@ -36,9 +45,176 @@ public class MsiDatabaseService : IDisposable
     /// <summary>Call after any change to the database (summary info, row edits, table import, ...).</summary>
     public void MarkDirty()
     {
-        if (_database == null || IsDirty) return;
-        IsDirty = true;
-        StateChanged?.Invoke();
+        if (_database == null) return;
+
+        // Show the document as "maybe changed" straight away, then check in the background whether it really still
+        // differs from how it was when opened or last saved (a cell set back, a row deleted again, ...).
+        bool raise;
+        int version;
+        lock (_stateLock)
+        {
+            version = ++_version;
+            raise = _state != ChangeState.Unknown;
+            _state = ChangeState.Unknown; // changed, but whether it still differs is not known until the check ends
+        }
+        if (raise) StateChanged?.Invoke();
+
+        _checkCts?.Cancel();
+        var cts = _checkCts = new CancellationTokenSource();
+        var snapshot = SnapshotWorkingCopy(); // taken now, so later edits cannot disturb it
+        var baseline = _baselineTask;
+        _pending = snapshot == null ? Task.CompletedTask : VerifyUnchangedAsync(version, snapshot, baseline, cts.Token);
+    }
+
+    private readonly object _stateLock = new();
+    private int _version;                  // bumped by every change and every reset
+    private Task<string?>? _baselineTask;  // ... which is worked out in the background
+    private CancellationTokenSource? _checkCts;
+    private Task _pending = Task.CompletedTask;
+
+    /// <summary>Completes when the background check of the latest change has finished (used by tests).</summary>
+    public async Task SettleAsync()
+    {
+        var baseline = _baselineTask;
+        if (baseline != null) await baseline.ConfigureAwait(false);
+        await _pending.ConfigureAwait(false);
+    }
+
+    private void ResetChangeTracking()
+    {
+        lock (_stateLock) _version++;
+        _checkCts?.Cancel();
+        _pending = Task.CompletedTask;
+        _baselineTask = null;
+
+        var snapshot = _database == null ? null : SnapshotWorkingCopy();
+        if (snapshot != null) _baselineTask = FingerprintAsync(snapshot, CancellationToken.None);
+    }
+
+    /// <summary>A private copy of the working file, which the background check owns and deletes.</summary>
+    private string? SnapshotWorkingCopy()
+    {
+        if (_workingPath == null || !File.Exists(_workingPath)) return null;
+        try
+        {
+            var copy = NewWorkingPath();
+            File.Copy(_workingPath, copy);
+            File.SetAttributes(copy, FileAttributes.Normal);
+            return copy;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Task<string?> FingerprintAsync(string snapshotPath, CancellationToken ct) =>
+        Task.Run(() =>
+        {
+            var probe = new MsiDatabaseService { _workingPath = snapshotPath }; // Dispose deletes the copy
+            try
+            {
+                if (ct.IsCancellationRequested) return null;
+                probe._database = new Database(snapshotPath, DatabaseOpenMode.Direct);
+                return probe.TryComputeFingerprint(ct);
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                // Dispose commits; a failure here must not fault the check or leave the state stuck at unknown.
+                try { probe.Dispose(); } catch { }
+            }
+        }, CancellationToken.None);
+
+    private async Task VerifyUnchangedAsync(int version, string snapshotPath, Task<string?>? baselineTask, CancellationToken ct)
+    {
+        var fingerprint = await FingerprintAsync(snapshotPath, ct).ConfigureAwait(false);
+        var baseline = baselineTask == null ? null : await baselineTask.ConfigureAwait(false);
+
+        bool changed;
+        lock (_stateLock)
+        {
+            if (version != _version || ct.IsCancellationRequested) return; // a newer change or a save came first
+
+            var dirty = fingerprint == null || baseline == null || fingerprint != baseline;
+            var result = dirty ? ChangeState.Dirty : ChangeState.Clean;
+            changed = result != _state;
+            _state = result;
+        }
+        if (changed) StateChanged?.Invoke();
+    }
+
+    private string? TryComputeFingerprint(CancellationToken ct = default)
+    {
+        try { return ComputeFingerprint(ct); }
+        catch { return null; } // unknown, so the caller treats the document as changed
+    }
+
+    /// <summary>
+    /// A hash of everything the user can change: the tables' schemas and rows (including Binary data, ignoring row
+    /// order) and the summary information. Streams and storages are not included.
+    /// </summary>
+    private string ComputeFingerprint(CancellationToken ct)
+    {
+        using var all = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        static void Add(IncrementalHash hash, string text)
+        {
+            var bytes = Encoding.UTF8.GetBytes(text);
+            hash.AppendData(BitConverter.GetBytes(bytes.Length));
+            hash.AppendData(bytes);
+        }
+
+        var tables = GetTableNames()
+            .Where(n => !n.Equals("_Streams", StringComparison.OrdinalIgnoreCase) &&
+                        !n.Equals("_Storages", StringComparison.OrdinalIgnoreCase) &&
+                        !n.Equals("_Tables", StringComparison.OrdinalIgnoreCase) &&
+                        !n.Equals("_Columns", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        foreach (var name in tables)
+        {
+            ct.ThrowIfCancellationRequested();
+            Add(all, name);
+
+            var definition = GetTableDefinition(name);
+            for (var i = 0; i < definition.Columns.Count; i++)
+            {
+                var column = definition.Columns[i];
+                Add(all, $"{column.Name}|{column.Kind}|{column.Length}|{column.Nullable}|{i < definition.PrimaryKeys}");
+            }
+
+            var rowHashes = new List<string>();
+            foreach (var row in ReadRawRows(definition))
+            {
+                ct.ThrowIfCancellationRequested();
+                using var rowHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                foreach (var value in row)
+                {
+                    switch (value)
+                    {
+                        case null: Add(rowHash, "n"); break;
+                        case int n: Add(rowHash, $"i{n}"); break;
+                        case string text: Add(rowHash, $"s{text}"); break;
+                        case byte[] data:
+                            Add(rowHash, "b");
+                            rowHash.AppendData(SHA256.HashData(data));
+                            break;
+                    }
+                }
+                rowHashes.Add(Convert.ToHexString(rowHash.GetHashAndReset()));
+            }
+
+            rowHashes.Sort(StringComparer.Ordinal); // row order carries no meaning
+            Add(all, rowHashes.Count.ToString());
+            foreach (var hash in rowHashes) Add(all, hash);
+        }
+
+        Add(all, System.Text.Json.JsonSerializer.Serialize(GetSummaryInformation()));
+        return Convert.ToHexString(all.GetHashAndReset());
     }
 
     /// <summary>
@@ -64,7 +240,9 @@ public class MsiDatabaseService : IDisposable
 
         _workingPath = working;
         _filePath = path;
-        IsDirty = false;
+        _state = ChangeState.Clean;
+        ResetChangeTracking();
+        Generation++;
         StateChanged?.Invoke();
     }
 
@@ -93,7 +271,9 @@ public class MsiDatabaseService : IDisposable
 
         _workingPath = working;
         _filePath = null;
-        IsDirty = false;
+        _state = ChangeState.Clean;
+        ResetChangeTracking();
+        Generation++;
         StateChanged?.Invoke();
     }
 
@@ -104,7 +284,8 @@ public class MsiDatabaseService : IDisposable
         if (!CanSaveInPlace) throw new NotSupportedException("This database must be saved with Save As.");
 
         CopyWorkingTo(_filePath!);
-        IsDirty = false;
+        _state = ChangeState.Clean;
+        ResetChangeTracking();
         StateChanged?.Invoke();
     }
 
@@ -138,7 +319,8 @@ public class MsiDatabaseService : IDisposable
         if (_database == null) throw new InvalidOperationException("No database open");
 
         _filePath = newPath;
-        IsDirty = false;
+        _state = ChangeState.Clean;
+        ResetChangeTracking();
         StateChanged?.Invoke();
     }
 
@@ -149,7 +331,20 @@ public class MsiDatabaseService : IDisposable
         _database.Dispose();
         try
         {
-            File.Copy(_workingPath!, destination, overwrite: true);
+            // Write beside the destination and then swap it in, so stopping the app (or a failure) part-way
+            // through a save can never leave the saved file half-written.
+            var temp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(destination)) ?? ".",
+                $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.morca-tmp");
+            try
+            {
+                File.Copy(_workingPath!, temp);
+                File.SetAttributes(temp, FileAttributes.Normal);
+                File.Move(temp, destination, overwrite: true);
+            }
+            finally
+            {
+                DeleteQuietly(temp);
+            }
         }
         finally
         {
@@ -442,14 +637,16 @@ public class MsiDatabaseService : IDisposable
         MarkDirty();
     }
 
-    /// <summary>Adds a row. <paramref name="values"/> maps column names to int, string or null; Binary columns are left empty.</summary>
+    /// <summary>Adds a row. <paramref name="values"/> maps column names to int, string, byte[] (Binary columns) or null.</summary>
     public void InsertRow(string tableName, IReadOnlyDictionary<string, object?> values)
     {
         if (_database == null) throw new InvalidOperationException("No database open");
 
         var table = GetTableDefinition(tableName);
-        if (table.Columns.Any(c => c.Kind == MsiColumnKind.Binary && !c.Nullable))
-            throw new InvalidOperationException("This table has a required Binary column, which cannot be filled in yet.");
+        var missing = table.Columns.FirstOrDefault(c => c.Kind == MsiColumnKind.Binary && !c.Nullable &&
+            !(values.TryGetValue(c.Name, out var data) && data is byte[]));
+        if (missing != null)
+            throw new InvalidOperationException($"'{missing.Name}' is a required Binary column; choose a file for it.");
 
         try
         {
@@ -473,6 +670,12 @@ public class MsiDatabaseService : IDisposable
     /// </summary>
     public void UpdateRow(string tableName, IReadOnlyDictionary<string, object?> values)
     {
+        UpdateRowCore(tableName, values);
+        MarkDirty();
+    }
+
+    private void UpdateRowCore(string tableName, IReadOnlyDictionary<string, object?> values)
+    {
         if (_database == null) throw new InvalidOperationException("No database open");
 
         var table = GetTableDefinition(tableName);
@@ -493,8 +696,6 @@ public class MsiDatabaseService : IDisposable
         {
             throw Describe($"Updating the row in '{tableName}'", ex, "The row may no longer exist.");
         }
-
-        MarkDirty();
     }
 
     /// <summary>Deletes the row whose primary key columns are given in <paramref name="keyValues"/>.</summary>
@@ -521,6 +722,154 @@ public class MsiDatabaseService : IDisposable
         MarkDirty();
     }
 
+    /// <summary>The bytes of a Binary cell in the row with the given primary key, or null when the cell is empty.</summary>
+    public byte[]? GetBinary(string tableName, IReadOnlyDictionary<string, object?> keyValues, string column)
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var table = GetTableDefinition(tableName);
+        var columnIndex = table.Columns.FindIndex(c => c.Name == column);
+        if (columnIndex < 0 || table.Columns[columnIndex].Kind != MsiColumnKind.Binary)
+            throw new InvalidOperationException($"'{column}' is not a Binary column of '{tableName}'.");
+
+        try
+        {
+            using var view = _database.OpenView($"SELECT * FROM `{tableName}`");
+            view.Execute();
+
+            foreach (var record in view)
+            {
+                if (!RecordHasKey(record, table, keyValues)) continue;
+                if (record.IsNull(columnIndex + 1)) return null;
+
+                using var stream = record.GetStream(columnIndex + 1);
+                using var buffer = new MemoryStream();
+                stream?.CopyTo(buffer);
+                return buffer.ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            throw Describe($"Reading '{column}' from '{tableName}'", ex);
+        }
+
+        throw new InvalidOperationException("The row no longer exists.");
+    }
+
+    /// <summary>Replaces the data of a Binary cell (null empties it) in the row with the given primary key.</summary>
+    public void SetBinary(string tableName, IReadOnlyDictionary<string, object?> keyValues, string column, byte[]? data)
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var table = GetTableDefinition(tableName);
+        var columnIndex = table.Columns.FindIndex(c => c.Name == column);
+        if (columnIndex < 0 || table.Columns[columnIndex].Kind != MsiColumnKind.Binary)
+            throw new InvalidOperationException($"'{column}' is not a Binary column of '{tableName}'.");
+        if (data == null && !table.Columns[columnIndex].Nullable)
+            throw new InvalidOperationException($"'{column}' cannot be empty.");
+
+        // The row is read back whole, deleted and written again with the new data. Only this row is touched.
+        var rows = ReadRawRows(table);
+        var rowIndex = rows.FindIndex(r => KeysMatch(table, r, keyValues));
+        if (rowIndex < 0) throw new InvalidOperationException("The row no longer exists.");
+
+        var oldRow = rows[rowIndex];
+        var newRow = (object?[])oldRow.Clone();
+        newRow[columnIndex] = data;
+
+        try
+        {
+            DeleteRow(tableName, keyValues);
+            try
+            {
+                InsertRawRows(table, new List<object?[]> { newRow });
+                _database.Commit();
+            }
+            catch
+            {
+                InsertRawRows(table, new List<object?[]> { oldRow }); // put the row back as it was
+                _database.Commit();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            throw Describe($"Changing '{column}' in '{tableName}'", ex);
+        }
+
+        MarkDirty();
+    }
+
+    /// <summary>
+    /// Changes values of a row whose primary key may change too. <paramref name="oldKeys"/> identifies the row now;
+    /// <paramref name="newValues"/> holds the new int, string or null value of every non-Binary column. Binary data
+    /// stays with the row. If the new row cannot be stored, the old one is put back.
+    /// </summary>
+    public void ReplaceRow(string tableName, IReadOnlyDictionary<string, object?> oldKeys, IReadOnlyDictionary<string, object?> newValues)
+    {
+        if (_database == null) throw new InvalidOperationException("No database open");
+
+        var table = GetTableDefinition(tableName);
+        var rows = ReadRawRows(table);
+        var oldRow = rows.FirstOrDefault(r => KeysMatch(table, r, oldKeys))
+            ?? throw new InvalidOperationException("The row no longer exists.");
+
+        var newRow = new object?[table.Columns.Count];
+        for (var i = 0; i < newRow.Length; i++)
+        {
+            var column = table.Columns[i];
+            newRow[i] = column.Kind == MsiColumnKind.Binary
+                ? oldRow[i]
+                : (newValues.TryGetValue(column.Name, out var value) ? value : oldRow[i]);
+        }
+
+        try
+        {
+            DeleteRow(tableName, oldKeys);
+            try
+            {
+                InsertRawRows(table, new List<object?[]> { newRow });
+                _database.Commit();
+            }
+            catch
+            {
+                InsertRawRows(table, new List<object?[]> { oldRow }); // put the row back as it was
+                _database.Commit();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            throw Describe($"Changing the row in '{tableName}'", ex, "A row with the same primary key may already exist.");
+        }
+
+        MarkDirty();
+    }
+
+    private static bool KeysMatch(MsiTableDefinition table, object?[] row, IReadOnlyDictionary<string, object?> keyValues)
+    {
+        for (var i = 0; i < table.PrimaryKeys; i++)
+        {
+            keyValues.TryGetValue(table.Columns[i].Name, out var wanted);
+            if (!Equals(row[i], wanted)) return false;
+        }
+        return true;
+    }
+
+    private static bool RecordHasKey(Record record, MsiTableDefinition table, IReadOnlyDictionary<string, object?> keyValues)
+    {
+        for (var i = 0; i < table.PrimaryKeys; i++)
+        {
+            var field = i + 1;
+            object? actual = record.IsNull(field) ? null
+                : table.Columns[i].Kind.IsNumber() ? record.GetInteger(field)
+                : record.GetString(field);
+            keyValues.TryGetValue(table.Columns[i].Name, out var wanted);
+            if (!Equals(actual, wanted)) return false;
+        }
+        return true;
+    }
+
     private static string ColumnList(IEnumerable<MsiColumnDefinition> columns) =>
         string.Join(", ", columns.Select(c => $"`{c.Name}`"));
 
@@ -536,6 +885,7 @@ public class MsiDatabaseService : IDisposable
             {
                 case int n: record.SetInteger(i + 1, n); break;
                 case string text when text.Length > 0: record.SetString(i + 1, text); break;
+                case byte[] bytes: record.SetStream(i + 1, new MemoryStream(bytes)); break;
             }
         }
         return record;
@@ -891,11 +1241,13 @@ public class MsiDatabaseService : IDisposable
         _database.Dispose();
         _database = null;
         _filePath = null;
-        IsDirty = false;
+        _state = ChangeState.Clean;
+        ResetChangeTracking();
 
         DeleteQuietly(_workingPath);
         _workingPath = null;
 
+        Generation++;
         StateChanged?.Invoke();
     }
 
@@ -913,3 +1265,16 @@ public record TableImportResult(
     IReadOnlyList<string> Imported,
     IReadOnlyList<string> Skipped,
     IReadOnlyList<(string File, string Error)> Failed);
+
+/// <summary>Whether a document has unsaved changes.</summary>
+public enum ChangeState
+{
+    /// <summary>Same as when it was opened or last saved.</summary>
+    Clean,
+
+    /// <summary>It was changed, and the check against the saved version is still running.</summary>
+    Unknown,
+
+    /// <summary>Different from the saved version.</summary>
+    Dirty
+}

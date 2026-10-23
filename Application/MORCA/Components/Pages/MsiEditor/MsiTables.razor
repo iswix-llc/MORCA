@@ -86,17 +86,49 @@
 
                 .content-area {
                     flex: 1;
-                    overflow-y: auto;
+                    min-height: 0;
+                    overflow: hidden;
+                }
+
+                .msi-grid .mud-table-cell {
+                    padding: 2px 8px;
+                }
+
+                .grid-cell {
+                    max-width: 520px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-size: .8rem;
+                }
+
+                .grid-null {
+                    opacity: .45;
+                    font-style: italic;
+                }
+
+                .msi-row-selected td {
+                    background: var(--mud-palette-action-default-hover) !important;
                 }
         </style>
 
         <div class="editor-container">
-            <div class="tables-panel" style="width: @TablesPanelWidth">
+            <div class="tables-panel" style="width: @TablesPanelWidth"
+                 @oncontextmenu="OnTablesContextMenu" @oncontextmenu:preventDefault="true">
                 <MudText Typo="Typo.subtitle2" Class="tables-title">
                     <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Class="mr-2" />
                     Tables
-                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" Class="ml-2"
-                             AriaLabel="Tables menu" title="Tables menu">
+                    @* Right-click opens this menu, so the ⋮ button is only shown on devices with a touch screen. *@
+                    <MudMenu @ref="_tablesMenu" PositionAtCursor="true" Dense="true" Class="ml-2">
+                        <ActivatorContent>
+                            @if (_hasTouch)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                               AriaLabel="Tables menu" title="Tables menu"
+                                               OnClick="@(e => context.ToggleAsync(e))" />
+                            }
+                        </ActivatorContent>
+                        <ChildContent>
                         <MudMenuItem OnClick="AddTableAsync">Add Table...</MudMenuItem>
                         <MudMenuItem OnClick="AddCustomTableAsync">Add Custom Table...</MudMenuItem>
                         <MudMenuItem OnClick="DropTableAsync" Disabled="@(!CanDropSelected)">Drop Table...</MudMenuItem>
@@ -105,6 +137,7 @@
                         <MudMenuItem OnClick="ImportTablesAsync">Import Tables...</MudMenuItem>
                         <MudDivider />
                         <MudMenuItem OnClick="AdjustSchemaAsync" Disabled="@(!CanAdjustSelected)">Adjust Schema...</MudMenuItem>
+                        </ChildContent>
                     </MudMenu>
                 </MudText>
                 <div class="tables-list">
@@ -118,14 +151,19 @@
                         {
                             @foreach (var table in _tables)
                             {
-                                <MudButton FullWidth="true"
-                                           Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
-                                           Color="Color.Primary"
-                                           OnClick="@(() => SelectTable(table))"
-                                           Class="mb-2"
-                                           StartIcon="@Icons.Material.Filled.GridOn">
-                                    @table
-                                </MudButton>
+                                @* The context-menu directives only work on plain elements, so the button sits in a div. *@
+                                var name = table;
+                                <div @oncontextmenu="@(e => OnTableContextMenu(name, e))"
+                                     @oncontextmenu:preventDefault="true" @oncontextmenu:stopPropagation="true">
+                                    <MudButton FullWidth="true"
+                                               Variant="@(_selectedTable == table ? Variant.Filled : Variant.Text)"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => SelectTable(name))"
+                                               Class="mb-2"
+                                               StartIcon="@Icons.Material.Filled.GridOn">
+                                        @table
+                                    </MudButton>
+                                </div>
                             }
                         }
                     }
@@ -155,47 +193,101 @@
                             @_selectedTable
                         </MudText>
                         <MudSpacer />
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
-                                   OnClick="AddRowAsync" Disabled="@(!CanEditRows)">Add Row</MudButton>
+                        @* Right-click opens this menu, so the ⋮ button is only shown on devices with a touch screen. *@
+                    <MudMenu @ref="_cellMenu" PositionAtCursor="true" Dense="true" Class="mr-2">
+                        <ActivatorContent>
+                            @if (_hasTouch)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                               AriaLabel="Row menu" title="Row menu"
+                                               OnClick="@(e => context.ToggleAsync(e))" />
+                            }
+                        </ActivatorContent>
+                        <ChildContent>
+                            <MudMenuItem Disabled="true">Errors...</MudMenuItem>
+                            <MudDivider />
+                            <MudMenuItem Disabled="@(!CanCutCell)" OnClick="CutCellAsync">Cut Cell</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CtxHasTextCell)" OnClick="CopyCellAsync">Copy Cell</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CanPasteCell)" OnClick="PasteCellAsync">Paste Cell</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CtxIsStringCell || !CanEditRows)" OnClick="PasteNewGuidAsync">Paste New GUID</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CtxIsStringCell || !CanEditRows)" OnClick="ImportTextFileAsync">Import Text File...</MudMenuItem>
+                            <MudDivider />
+                            <MudMenuItem Disabled="@(!CanEditRows || _ctxRow == null)" OnClick="CutRowAsync">Cut Row(s)</MudMenuItem>
+                            <MudMenuItem Disabled="@(_ctxRow == null)" OnClick="CopyRowAsync">Copy Row(s)</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CanPasteRows)" OnClick="PasteRowsAsync">Paste Row(s)</MudMenuItem>
+                            <MudDivider />
+                            <MudMenuItem Disabled="@(!CanEditRows)" OnClick="AddRowAsync">Add Row</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CanEditRows || _ctxRow == null)" OnClick="DropCtxRowAsync">Drop Row</MudMenuItem>
+                            <MudDivider />
+                            <MudMenuItem Disabled="@(!CtxIsNumberCell || !CtxIsHex)" OnClick="@(() => SetCtxHex(false))">View in Decimal</MudMenuItem>
+                            <MudMenuItem Disabled="@(!CtxIsNumberCell || CtxIsHex)" OnClick="@(() => SetCtxHex(true))">View in Hexadecimal</MudMenuItem>
+                        </ChildContent>
+                    </MudMenu>
                     </div>
 
-                    <div class="content-area">
+                    <div class="content-area" @onclick="OnGridClick" @oncontextmenu="OnGridContextMenu" @oncontextmenu:preventDefault="true">
                         @if (_tableData != null)
                         {
-                            <MudTable Items="@_tableData.Value.Rows" Hover="true" Dense="true" Striped="true">
-                                <HeaderContent>
-                                    @if (CanEditRows)
-                                    {
-                                        <MudTh Style="width:90px"></MudTh>
-                                    }
+                            @* One grid per table (the key resets sorting and column widths when the table changes). *@
+                            <MudDataGrid @ref="_grid" @key="_selectedTable" T="MsiGridRow" Items="_gridRows" Dense="true" Hover="true" Striped="true"
+                                         FixedHeader="true" Height="calc(100vh - 220px)"
+                                         SortMode="SortMode.Single" ColumnResizeMode="ResizeMode.Column"
+                                         ReadOnly="@(!CanEditRows)" EditMode="DataGridEditMode.Cell"
+                                         CommittedItemChanges="CommitCellAsync"
+                                         SelectedItem="_selectedRow" SelectedItemChanged="OnRowSelected" RowClick="OnRowClick"
+                                         RowClassFunc="RowClass" Class="msi-grid">
+                                <Columns>
                                     @foreach (var col in _tableData.Value.Columns)
                                     {
-                                        <MudTh>@col.Name</MudTh>
+                                        var name = col.Name;
+                                        var binary = IsBinaryColumn(name);
+                                        <TemplateColumn T="MsiGridRow" Title="@name" Sortable="@(!binary)" Resizable="true" Filterable="false"
+                                                        Editable="@(!binary && CanEditRows)"
+                                                        SortBy="@(r => r.Values.GetValueOrDefault(name))">
+                                            <CellTemplate>
+                                                @if (binary)
+                                                {
+                                                    var hasData = context.Item.Values.GetValueOrDefault(name) != null;
+                                                    <div class="grid-cell @(hasData ? null : "grid-null")" style="display:flex; align-items:center; gap:2px;"
+                                                        >
+                                                        <span>@(hasData ? "[Binary]" : "\u2205")</span>
+                                                        @if (CanEditRows)
+                                                        {
+                                                            <MudIconButton Icon="@Icons.Material.Filled.UploadFile" Size="Size.Small" title="Import a file into this cell..." aria-label="Import file"
+                                                                           OnClick="@(() => ImportBinaryAsync(context.Item, name))" />
+                                                        }
+                                                        @if (hasData)
+                                                        {
+                                                            <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" title="Export this cell to a file..." aria-label="Export file"
+                                                                           OnClick="@(() => ExportBinaryAsync(context.Item, name))" />
+                                                            @if (CanEditRows && IsNullableColumn(name))
+                                                            {
+                                                                <MudIconButton Icon="@Icons.Material.Filled.Clear" Size="Size.Small" title="Empty this cell" aria-label="Empty cell"
+                                                                               OnClick="@(() => ClearBinaryAsync(context.Item, name))" />
+                                                            }
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="@CellClass(context.Item, name)" title="@CellText(context.Item, name)"
+                                                        >@CellText(context.Item, name)</div>
+                                                }
+                                            </CellTemplate>
+                                            <EditTemplate>
+                                                <MudTextField T="string" Value="@EditText(context.Item, name)"
+                                                              ValueChanged="@(v => context.Item.Pending[name] = v ?? "")"
+                                                              OnBlur="@(() => CommitFromEditorAsync(context.Item))"
+                                                              OnKeyDown="@(e => OnCellKeyDownAsync(e, context.Item))"
+                                                              Immediate="true" Margin="Margin.Dense" AutoFocus="true" />
+                                            </EditTemplate>
+                                        </TemplateColumn>
                                     }
-                                </HeaderContent>
-                                <RowTemplate>
-                                    @if (CanEditRows)
-                                    {
-                                        <MudTd Style="white-space:nowrap">
-                                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" title="Edit row" aria-label="Edit row"
-                                                           OnClick="@(() => EditRowAsync(context))" />
-                                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" title="Delete row" aria-label="Delete row"
-                                                           OnClick="@(() => DeleteRowAsync(context))" />
-                                        </MudTd>
-                                    }
-                                    @foreach (var col in _tableData.Value.Columns)
-                                    {
-                                        <MudTd DataLabel="@col.Name" Class="@(IsMatch(context, col.Name) ? "find-hit" : null)">
-                                            <MudText Typo="Typo.caption">
-                                                @(context.TryGetValue(col.Name, out var val) ? (val?.ToString() ?? "∅") : "∅")
-                                            </MudText>
-                                        </MudTd>
-                                    }
-                                </RowTemplate>
+                                </Columns>
                                 <NoRecordsContent>
                                     <MudText Typo="Typo.caption">No rows in this table.</MudText>
                                 </NoRecordsContent>
-                            </MudTable>
+                            </MudDataGrid>
                         }
                         else
                         {
@@ -216,11 +308,462 @@
     private List<string>? _tables;
     private string? _selectedTable;
     private (List<(string Name, string Type)> Columns, List<Dictionary<string, object?>> Rows)? _tableData;
+    private List<MsiGridRow> _gridRows = new();
+    private MsiGridRow? _selectedRow;
+    private MsiTableDefinition? _definition;   // schema of the selected table; null if it cannot be read
+
+    private void OnRowSelected(MsiGridRow? row) => _selectedRow = row;
+
+    private string RowClass(MsiGridRow row, int index) => _selection.Contains(row) ? "msi-row-selected" : "";
+
+    // --- Selecting rows: click selects one, Ctrl+click adds or removes one, Shift+click selects a range ---
+    private MudDataGrid<MsiGridRow>? _grid;
+    private readonly HashSet<MsiGridRow> _selection = new(ReferenceEqualityComparer.Instance);
+    private MsiGridRow? _anchor;
+
+    private List<MsiGridRow> DisplayedRows => (_grid?.FilteredItems ?? _gridRows).ToList();
+
+    private void OnRowClick(DataGridRowClickEventArgs<MsiGridRow> args)
+    {
+        var row = args.Item;
+        var mouse = args.MouseEventArgs;
+        if (mouse.ShiftKey && _anchor != null)
+        {
+            var shown = DisplayedRows;
+            int from = shown.IndexOf(_anchor), to = shown.IndexOf(row);
+            if (from >= 0 && to >= 0)
+            {
+                if (!mouse.CtrlKey) _selection.Clear();
+                for (var i = Math.Min(from, to); i <= Math.Max(from, to); i++) _selection.Add(shown[i]);
+                return;
+            }
+        }
+
+        if (mouse.CtrlKey)
+        {
+            if (!_selection.Remove(row)) _selection.Add(row);
+        }
+        else
+        {
+            _selection.Clear();
+            _selection.Add(row);
+        }
+        _anchor = row;
+    }
+
+    /// <summary>The selected rows in the order shown; the right-clicked row when nothing else is selected.</summary>
+    private List<MsiGridRow> SelectedRows()
+    {
+        var rows = DisplayedRows.Where(_selection.Contains).ToList();
+        if (rows.Count == 0 && _ctxRow != null) rows.Add(_ctxRow);
+        return rows;
+    }
+
+    private bool IsBinaryColumn(string name) =>
+        _definition?.Columns.Any(c => c.Name == name && c.Kind == MsiColumnKind.Binary) == true;
+
+    private bool IsNullableColumn(string name) =>
+        _definition?.Columns.Any(c => c.Name == name && c.Nullable) == true;
+
+    private string CellText(MsiGridRow row, string column) =>
+        row.Values.TryGetValue(column, out var value) && value != null ? Format(column, value) : "\u2205";
+
+    // A number column shown in hexadecimal reads 0x1A; everything else is shown as is.
+    private string Format(string column, object value) =>
+        value is int number && _hexColumns.Contains(column) ? $"0x{number:X}" : value.ToString() ?? "";
+
+    private string CellClass(MsiGridRow row, string column)
+    {
+        var css = "grid-cell";
+        if (row.Values.GetValueOrDefault(column) == null) css += " grid-null";
+        if (IsMatch(row.Values, column)) css += " find-hit";
+        return css;
+    }
+
+    private string EditText(MsiGridRow row, string column) =>
+        row.Pending.TryGetValue(column, out var typed) ? typed
+            : row.Values.GetValueOrDefault(column) is { } value ? Format(column, value) : "";
+
+    /// <summary>The primary key values of a row, which identify it to the database.</summary>
+    private Dictionary<string, object?> KeysOf(MsiGridRow row)
+    {
+        var keys = new Dictionary<string, object?>();
+        if (_definition == null) return keys;
+        foreach (var column in _definition.Columns.Take(_definition.PrimaryKeys))
+            keys[column.Name] = row.Values.GetValueOrDefault(column.Name);
+        return keys;
+    }
+
+    // --- Editing in place ---
+    // The edit box saves the cell itself (when it loses focus, or on Enter) rather than waiting for the grid to
+    // call CommitCellAsync, because the grid does not reliably do so in Cell mode.
+    private async Task CommitFromEditorAsync(MsiGridRow row) => await CommitCellAsync(row);
+
+    private async Task OnCellKeyDownAsync(KeyboardEventArgs e, MsiGridRow row)
+    {
+        if (e.Key == "Enter") await CommitCellAsync(row);
+        else if (e.Key == "Escape") row.Pending.Clear();
+    }
+
+    private Task<DataGridEditFormAction> CommitCellAsync(MsiGridRow row)
+    {
+        var typed = row.Pending.ToList();
+        row.Pending.Clear();
+        if (_selectedTable == null || _definition == null || typed.Count == 0)
+            return Task.FromResult(DataGridEditFormAction.Close);
+
+        var table = _selectedTable;
+        try
+        {
+            var newValues = new Dictionary<string, object?>(row.Values);
+            foreach (var (name, text) in typed)
+            {
+                var column = _definition.Columns.First(c => c.Name == name);
+                newValues[name] = column.ParseCellText(text);
+            }
+
+            if (typed.All(t => Equals(newValues[t.Key], row.Values.GetValueOrDefault(t.Key))))
+                return Task.FromResult(DataGridEditFormAction.Close); // nothing actually changed
+
+            var oldKeys = KeysOf(row);
+            var keyChanged = _definition.Columns.Take(_definition.PrimaryKeys)
+                .Any(c => !Equals(newValues[c.Name], row.Values.GetValueOrDefault(c.Name)));
+
+            if (keyChanged) MsiService.ReplaceRow(table, oldKeys, newValues);
+            else
+            {
+                MsiService.UpdateRow(table, newValues);
+            }
+
+            foreach (var (name, value) in newValues) row.Values[name] = value;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not change the cell: {ex.Message}", Severity.Error);
+        }
+
+        return Task.FromResult(DataGridEditFormAction.Close);
+    }
+
+
+    // --- Cell right-click menu (modelled on Orca's) ---
+    private MudMenu? _cellMenu;
+    private MsiGridRow? _ctxRow;
+    private string? _ctxColumn;
+    private readonly HashSet<string> _hexColumns = new();
+    private (string Table, List<Dictionary<string, object?>> Rows)? _rowClipboard;
+
+    /// <summary>
+    /// Finds the grid cell under the pointer and makes it the one the menu acts on. The grid does not pass cell
+    /// events to our handlers, so the page asks the browser which table cell is at the pointer. Returns false when
+    /// the pointer is not over a body cell (the header, say).
+    /// </summary>
+    private async Task<bool> LocateCellAsync(double x, double y, bool selectRow)
+    {
+        if (_tableData == null) return false;
+        var js = "(function(x,y){var el=document.elementFromPoint(x,y);var td=el&&el.closest('td');" +
+                 "if(!td||!td.parentElement||td.parentElement.parentElement.tagName!=='TBODY')return [-1,-1];" +
+                 "return [td.parentElement.sectionRowIndex,td.cellIndex];})(" +
+                 x.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                 y.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
+        int[] at;
+        try { at = await JS.InvokeAsync<int[]>("eval", js); }
+        catch { return false; }
+
+        var rows = DisplayedRows;
+        var columnIndex = at[1];
+        var columns = _tableData.Value.Columns;
+        if (at[0] < 0 || at[0] >= rows.Count || columnIndex < 0 || columnIndex >= columns.Count) return false;
+
+        _ctxRow = rows[at[0]];
+        _ctxColumn = columns[columnIndex].Name;
+        if (selectRow)
+        {
+            _selectedRow = _ctxRow;
+            // A row that is not selected becomes the only selected row; inside the selection keeps the selection.
+            if (!_selection.Contains(_ctxRow))
+            {
+                _selection.Clear();
+                _selection.Add(_ctxRow);
+                _anchor = _ctxRow;
+            }
+        }
+        return true;
+    }
+
+    // Right-clicking in the grid opens the menu at the pointer, like the Tables menu.
+    private async Task OnGridContextMenu(MouseEventArgs e)
+    {
+        if (_cellMenu == null || _selectedTable == null) return;
+        // Over a cell, the menu acts on it. Anywhere else (the header, empty space, an empty table) it still opens,
+        // with the items that need a cell turned off, so Add Row and Paste Row(s) work on an empty table.
+        if (!await LocateCellAsync(e.ClientX, e.ClientY, selectRow: true))
+        {
+            _ctxRow = null;
+            _ctxColumn = null;
+        }
+        await _cellMenu.OpenMenuAsync(e);
+    }
+
+    // Clicking or tapping a cell makes it the one the touch ⋮ button acts on, without changing the selection.
+    private async Task OnGridClick(MouseEventArgs e) => await LocateCellAsync(e.ClientX, e.ClientY, selectRow: false);
+
+    private MsiColumnDefinition? CtxColumn => _definition?.Columns.FirstOrDefault(c => c.Name == _ctxColumn);
+    private bool CtxHasTextCell => CtxColumn is { } c && c.Kind != MsiColumnKind.Binary;
+    private bool CtxIsStringCell => CtxColumn is { Kind: MsiColumnKind.String };
+    private bool CtxIsNumberCell => CtxColumn is { } c && c.Kind.IsNumber();
+    private bool CtxIsHex => _ctxColumn != null && _hexColumns.Contains(_ctxColumn);
+    private bool CanCutCell => CanEditRows && CtxHasTextCell && CtxColumn!.Nullable;
+    private bool CanPasteCell => CanEditRows && CtxHasTextCell && _ctxRow != null;
+
+    private bool CanPasteRows =>
+        CanEditRows && _rowClipboard is { Rows.Count: > 0 } && _definition != null &&
+        _rowClipboard.Value.Rows[0].Keys.Order().SequenceEqual(_definition.Columns.Select(c => c.Name).Order());
+
+    private void SetCtxHex(bool hex)
+    {
+        if (_ctxColumn == null) return;
+        if (hex) _hexColumns.Add(_ctxColumn); else _hexColumns.Remove(_ctxColumn);
+    }
+
+    private string CtxCellText() =>
+        _ctxRow != null && _ctxColumn != null && _ctxRow.Values.GetValueOrDefault(_ctxColumn) is { } v ? Format(_ctxColumn, v) : "";
+
+    private async Task SetCtxCellAsync(string text)
+    {
+        if (_ctxRow == null || _ctxColumn == null) return;
+        _ctxRow.Pending[_ctxColumn] = text;
+        await CommitCellAsync(_ctxRow);
+    }
+
+    private async Task CopyCellAsync() =>
+        await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(CtxCellText());
+
+    private async Task CutCellAsync()
+    {
+        await CopyCellAsync();
+        await SetCtxCellAsync("");
+    }
+
+    private async Task PasteCellAsync()
+    {
+        var text = await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.GetTextAsync();
+        if (text == null) return;
+        await SetCtxCellAsync(text);
+    }
+
+    private Task PasteNewGuidAsync() => SetCtxCellAsync("{" + Guid.NewGuid().ToString("D").ToUpperInvariant() + "}");
+
+    private async Task ImportTextFileAsync()
+    {
+        try
+        {
+            var file = await Microsoft.Maui.Storage.FilePicker.Default.PickAsync(
+                new Microsoft.Maui.Storage.PickOptions { PickerTitle = $"Choose a text file for {_ctxColumn}" });
+            if (file == null) return;
+            using var reader = new StreamReader(await file.OpenReadAsync());
+            await SetCtxCellAsync(await reader.ReadToEndAsync());
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not import the file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    /// <summary>Remembers the selected rows (Binary cells are read from the database) and puts their text on the clipboard.</summary>
+    private async Task CopyRowAsync()
+    {
+        if (_selectedTable == null || _definition == null) return;
+        try
+        {
+            var copied = new List<Dictionary<string, object?>>();
+            var lines = new List<string>();
+            foreach (var row in SelectedRows())
+            {
+                var values = new Dictionary<string, object?>();
+                foreach (var column in _definition.Columns)
+                {
+                    values[column.Name] = column.Kind == MsiColumnKind.Binary
+                        ? MsiService.GetBinary(_selectedTable, KeysOf(row), column.Name)
+                        : row.Values.GetValueOrDefault(column.Name);
+                }
+                copied.Add(values);
+                lines.Add(string.Join("\t", _definition.Columns.Select(c =>
+                    c.Kind == MsiColumnKind.Binary ? "[Binary]" : values[c.Name]?.ToString() ?? "")));
+            }
+            if (copied.Count == 0) return;
+
+            _rowClipboard = (_selectedTable, copied);
+            await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(string.Join("\n", lines));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not copy the rows: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CutRowAsync()
+    {
+        if (_selectedTable == null) return;
+        var rows = SelectedRows();
+        await CopyRowAsync();
+        if (_rowClipboard == null) return;
+        try
+        {
+            foreach (var row in rows) MsiService.DeleteRow(_selectedTable, KeysOf(row));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not cut the rows: {ex.Message}", Severity.Error);
+        }
+        SelectTable(_selectedTable);
+    }
+
+    private Task PasteRowsAsync()
+    {
+        if (_selectedTable == null || _rowClipboard == null) return Task.CompletedTask;
+        var table = _selectedTable;
+        string? firstError = null;
+        var pasted = 0;
+        foreach (var row in _rowClipboard.Value.Rows)
+        {
+            try
+            {
+                MsiService.InsertRow(table, row);
+                pasted++;
+            }
+            catch (Exception ex)
+            {
+                firstError ??= ex.Message; // typically the same key already exists
+            }
+        }
+        SelectTable(table);
+        if (firstError != null) Snackbar.Add($"Pasted {pasted} row(s). Could not paste a row: {firstError}", Severity.Warning);
+        return Task.CompletedTask;
+    }
+
+    private async Task DropCtxRowAsync()
+    {
+        if (_selectedTable == null) return;
+        var rows = SelectedRows();
+        if (rows.Count == 0) return;
+        if (rows.Count == 1)
+        {
+            await DeleteRowAsync(rows[0].Values);
+            return;
+        }
+
+        var table = _selectedTable;
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete rows", $"Delete the {rows.Count} selected rows from {table}?", yesText: "Delete", cancelText: "Cancel");
+        if (confirmed != true) return;
+
+        try
+        {
+            foreach (var row in rows) MsiService.DeleteRow(table, KeysOf(row));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete the rows: {ex.Message}", Severity.Error);
+        }
+        SelectTable(table);
+    }
+
+    // --- Binary cells ---
+    private async Task ImportBinaryAsync(MsiGridRow row, string column)
+    {
+        if (_selectedTable == null) return;
+        var table = _selectedTable;
+
+        try
+        {
+            var file = await Microsoft.Maui.Storage.FilePicker.Default.PickAsync(
+                new Microsoft.Maui.Storage.PickOptions { PickerTitle = $"Choose the file for {column}" });
+            if (file == null) return;
+
+            using var input = await file.OpenReadAsync();
+            using var buffer = new MemoryStream();
+            await input.CopyToAsync(buffer);
+
+            MsiService.SetBinary(table, KeysOf(row), column, buffer.ToArray());
+            SelectTable(table); // the row may move, so reload
+            Snackbar.Add($"Imported {file.FileName} into {column}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not import the file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportBinaryAsync(MsiGridRow row, string column)
+    {
+        if (_selectedTable == null) return;
+
+        try
+        {
+            var keys = KeysOf(row);
+            var bytes = MsiService.GetBinary(_selectedTable, keys, column);
+            if (bytes == null)
+            {
+                Snackbar.Add("That cell is empty.", Severity.Info);
+                return;
+            }
+
+            var suggested = string.Concat(string.Join("_", keys.Values.Select(v => v?.ToString())).Select(
+                ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+            if (suggested.Length == 0) suggested = column;
+
+            using var stream = new MemoryStream(bytes);
+            var result = await CommunityToolkit.Maui.Storage.FileSaver.Default.SaveAsync($"{suggested}.bin", stream);
+            if (result.IsSuccessful)
+                Snackbar.Add($"Saved {result.FilePath}", Severity.Success);
+            else if (result.Exception is { } ex && !ex.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+                Snackbar.Add($"Could not save the file: {ex.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not export the cell: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ClearBinaryAsync(MsiGridRow row, string column)
+    {
+        if (_selectedTable == null) return;
+        var table = _selectedTable;
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Empty cell", $"Remove the data in {column}? This cannot be undone.", yesText: "Remove", cancelText: "Cancel");
+        if (confirmed != true) return;
+
+        try
+        {
+            MsiService.SetBinary(table, KeysOf(row), column, null);
+            SelectTable(table);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not empty the cell: {ex.Message}", Severity.Error);
+        }
+    }
 
     // Width sized to the longest table name (~1.1ch per char, since names are mixed case) plus
     // room for the list padding, button padding and icon.
     private string TablesPanelWidth =>
         $"calc({(_tables is { Count: > 0 } ? _tables.Max(t => t.Length) : 15) * 1.1:0.#}ch + 100px)";
+
+    // --- Right-click opens the Tables menu at the pointer ---
+    private MudMenu? _tablesMenu;
+
+    // Right-clicking anywhere in the tables panel.
+    private Task OnTablesContextMenu(MouseEventArgs e) =>
+        _tablesMenu?.OpenMenuAsync(e) ?? Task.CompletedTask;
+
+    // Right-clicking a table selects it first (as Orca does), so Drop Table and Adjust Schema apply to it.
+    private Task OnTableContextMenu(string table, MouseEventArgs e)
+    {
+        if (_selectedTable != table) SelectTable(table);
+        return _tablesMenu?.OpenMenuAsync(e) ?? Task.CompletedTask;
+    }
 
     // --- Find / Find Next across all tables ---
     private string? _findText;
@@ -304,6 +847,9 @@
         _match is { } m && m.Table == _selectedTable && m.Column == column &&
         _tableData is { } data && m.Row < data.Rows.Count && ReferenceEquals(data.Rows[m.Row], row);
 
+    // True when the device has a touch screen (asked of the OS); decides whether the ⋮ button is shown.
+    private readonly bool _hasTouch = TouchSupport.HasTouchScreen;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!_scrollToMatch) return;
@@ -324,10 +870,19 @@
         LoadTables();
     }
 
+    private int _generation = -1;   // which opened database the table list was loaded for
+
     private void OnMsiStateChanged()
     {
         InvokeAsync(() =>
         {
+            // The same database changing (first edit marks it dirty, saving) must not reset the table you are in.
+            if (MsiService.IsOpen && _tables != null && _generation == MsiService.Generation)
+            {
+                StateHasChanged();
+                return;
+            }
+
             LoadTables();
             StateHasChanged();
         });
@@ -338,6 +893,7 @@
         _selectedTable = null;
         _tableData = null;
         _tables = MsiService.IsOpen ? MsiService.GetTableNames() : null;
+        _generation = MsiService.Generation;
 
         if (_tables is { Count: > 0 })
         {
@@ -452,33 +1008,6 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Could not add row: {ex.Message}", Severity.Error);
-        }
-    }
-
-    private async Task EditRowAsync(Dictionary<string, object?> row)
-    {
-        if (_selectedTable == null) return;
-        var tableName = _selectedTable;
-
-        try
-        {
-            var definition = MsiService.GetTableDefinition(tableName);
-            var parameters = new DialogParameters<RowEditDialog>
-            {
-                { x => x.Definition, definition },
-                { x => x.Row, row }
-            };
-            var dialog = await DialogService.ShowAsync<RowEditDialog>($"Edit row in {tableName}", parameters,
-                new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
-            var result = await dialog.Result;
-            if (result is null || result.Canceled || result.Data is not Dictionary<string, object?> values) return;
-
-            MsiService.UpdateRow(tableName, values);
-            SelectTable(tableName);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not update row: {ex.Message}", Severity.Error);
         }
     }
 
@@ -654,6 +1183,38 @@
         }
     }
 
+    /// <summary>
+    /// Orders rows by their primary key columns, in column order: numbers by value, text without regard to case,
+    /// empty values first. Tables the editor cannot describe keep the order they have in the database.
+    /// </summary>
+    private static List<MsiGridRow> SortByPrimaryKey(IEnumerable<MsiGridRow> rows, MsiTableDefinition? definition)
+    {
+        var list = rows.ToList();
+        if (definition == null || definition.PrimaryKeys < 1) return list;
+        var keys = definition.Columns.Take(definition.PrimaryKeys).Select(c => c.Name).ToArray();
+
+        static int Compare(object? x, object? y)
+        {
+            if (x is null || y is null) return (x is null ? 0 : 1) - (y is null ? 0 : 1);
+            if (x is IComparable cx && y.GetType() == x.GetType() && x is not string) return cx.CompareTo(y);
+            return string.Compare(Convert.ToString(x), Convert.ToString(y), StringComparison.OrdinalIgnoreCase);
+        }
+
+        // List.Sort is not stable, so ties keep their database order through the original index.
+        return list.Select((row, index) => (row, index))
+            .OrderBy(t => t, Comparer<(MsiGridRow row, int index)>.Create((l, r) =>
+            {
+                foreach (var key in keys)
+                {
+                    int c = Compare(l.row.Values.GetValueOrDefault(key), r.row.Values.GetValueOrDefault(key));
+                    if (c != 0) return c;
+                }
+                return l.index.CompareTo(r.index);
+            }))
+            .Select(t => t.row)
+            .ToList();
+    }
+
     private void SelectTable(string tableName, bool keepFind = false)
     {
         // Choosing a table by hand, or reloading one after an edit, ends the current search.
@@ -661,12 +1222,19 @@
 
         try
         {
+            if (_selectedTable != tableName) _hexColumns.Clear(); // the hex view belongs to one table
             _selectedTable = tableName;
             _tableData = null;
 
             var columns = MsiService.GetTableColumns(tableName);
             var rows = MsiService.GetTableRows(tableName);
             _tableData = (columns, rows);
+            _selectedRow = null;
+            _selection.Clear();
+            _anchor = null;
+            try { _definition = MsiService.GetTableDefinition(tableName); }
+            catch { _definition = null; } // e.g. system tables the editor cannot describe
+            _gridRows = SortByPrimaryKey(rows.Select(r => new MsiGridRow(r)), _definition);
         }
         catch (Exception ex)
         {

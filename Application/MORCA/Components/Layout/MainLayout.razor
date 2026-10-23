@@ -18,7 +18,7 @@
         @if (MsiService.IsOpen)
         {
             <MudText Typo="Typo.body2" Color="Color.Inherit" Class="ml-4">
-                📦 @MsiService.DisplayName@(MsiService.IsDirty ? "*" : "")
+                📦 @MsiService.DisplayName@(MsiService.State switch { MORCA.Services.ChangeState.Dirty => "*", MORCA.Services.ChangeState.Unknown => "?", _ => "" })
             </MudText>
         }
         

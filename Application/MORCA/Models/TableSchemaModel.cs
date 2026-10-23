@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace MORCA.Models;
@@ -50,6 +51,38 @@ public class MsiColumnDefinition
     public string? OriginalName { get; set; }
 
     public MsiColumnDefinition Clone() => (MsiColumnDefinition)MemberwiseClone();
+
+    /// <summary>
+    /// Turns text typed into a cell into the value stored for this column: null for empty text in a nullable
+    /// column, an int for number columns, otherwise the text. Throws <see cref="FormatException"/> with a message
+    /// for the user when the text does not fit the column.
+    /// </summary>
+    public object? ParseCellText(string text)
+    {
+        if (text.Length == 0)
+        {
+            if (!Nullable) throw new FormatException($"'{Name}' is required.");
+            return null;
+        }
+
+        if (Kind.IsNumber())
+        {
+            // Hexadecimal is accepted with a 0x prefix, which is how "View in Hexadecimal" shows a cell.
+            var isHex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+            var parsed = isHex
+                ? int.TryParse(text.AsSpan(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var number)
+                : int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out number);
+            if (!parsed)
+                throw new FormatException($"'{Name}' must be a whole number.");
+            if (Kind == MsiColumnKind.Integer && (number < -32767 || number > 32767))
+                throw new FormatException($"'{Name}' must be between -32767 and 32767 (use a Long Integer column for larger values).");
+            return number;
+        }
+
+        if (Length > 0 && text.Length > Length)
+            throw new FormatException($"'{Name}' can be at most {Length} characters.");
+        return text;
+    }
 }
 
 /// <summary>A table being defined in the Table Schema dialog. The first <see cref="PrimaryKeys"/> columns form the key.</summary>
