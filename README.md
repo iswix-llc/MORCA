@@ -1,3 +1,5 @@
+<p align="center"><img src="Images/morca-logo.svg" alt="MORCA logo: an orca's dorsal fin rising out of a table grid" width="120"></p>
+
 # MORCA
 
 **A multiplatform Windows Installer database (.MSI) editor.** MORCA is an Orca-style editor for the MSI databases that WiX and other tools produce. It runs on Windows, Android, iOS and Mac Catalyst from one .NET MAUI Blazor Hybrid codebase, and it reads and writes MSI files itself, so it needs no `msi.dll` and no Windows SDK.
