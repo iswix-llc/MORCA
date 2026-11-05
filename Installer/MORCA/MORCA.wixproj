@@ -1,4 +1,4 @@
-﻿<Project Sdk="WixToolset.Sdk/7.0.0">
+﻿<Project Sdk="IsWiX.WixToolset.Sdk/7.0.1">
   <PropertyGroup>
     <!-- If MSIProductVersion not passed in, try to get it from TFBuild Environments (XAML Builds)-->
     <MSIProductVersion Condition=" '$(MSIProductVersion)' == '' ">$([System.Text.RegularExpressions.Regex]::Match($(TF_BUILD_BUILDNUMBER), "\d+.\d+.\d+.\d+"))</MSIProductVersion>
@@ -54,8 +54,8 @@
     <Content Include="Resources\EULA.rtf" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="WixToolset.Iis.wixext" Version="7.0.0" />
-    <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
-    <PackageReference Include="WixToolset.NetFx.wixext" Version="7.0.0" />
+    <PackageReference Include="IsWiX.WixToolset.Iis.wixext" Version="7.0.1" />
+    <PackageReference Include="IsWiX.WixToolset.UI.wixext" Version="7.0.1" />
+    <PackageReference Include="IsWiX.WixToolset.NetFx.wixext" Version="7.0.1" />
   </ItemGroup>
 </Project>
