@@ -77,7 +77,7 @@ jobs:
           path: Installer/Deploy/App
           if-no-files-found: error
 
-  # The MSI is built and signed on Linux (managed WiX backend + the 'sign' CLI).
+  # The MSI is built and signed on Linux (managed WiX backend + Jsign).
   msi:
     needs: app
     runs-on: ubuntu-latest
@@ -107,21 +107,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Cross-platform 'sign' CLI (Azure signing service). Check 'sign code --help' if the option names change.
-      - name: Install sign CLI
-        run: dotnet tool install --global sign --prerelease
+      # The 'sign' CLI and the Azure signing action are Windows-only. Jsign signs MSIs on Linux and
+      # talks to the same Azure signing service, using the access token from the az login above.
+      - name: Install Jsign
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo ebourg/jsign --pattern 'jsign_*_all.deb' --dir "$RUNNER_TEMP"
+          sudo apt-get install -y "$RUNNER_TEMP"/jsign_*_all.deb
 
       - name: Sign MSI
-        run: >
-          sign code trusted-signing
-          --base-directory "$GITHUB_WORKSPACE/Installer/MORCA/bin/x64/Release"
-          --trusted-signing-endpoint "${{ vars.SIGNING_ENDPOINT }}"
-          --trusted-signing-account "${{ vars.SIGNING_ACCOUNT }}"
-          --trusted-signing-certificate-profile "${{ vars.SIGNING_PROFILE }}"
-          --file-digest SHA256
-          --timestamp-url http://timestamp.acs.microsoft.com
-          --timestamp-digest SHA256
-          "*.msi"
+        run: |
+          token=$(az account get-access-token --resource https://codesigning.azure.net --query accessToken -o tsv)
+          endpoint="${{ vars.SIGNING_ENDPOINT }}"
+          endpoint="${endpoint#https://}"; endpoint="${endpoint%/}"
+          jsign --storetype TRUSTEDSIGNING \
+                --keystore "$endpoint" \
+                --storepass "$token" \
+                --alias "${{ vars.SIGNING_ACCOUNT }}/${{ vars.SIGNING_PROFILE }}" \
+                --alg SHA-256 \
+                --tsaurl http://timestamp.acs.microsoft.com --tsmode RFC3161 \
+                Installer/MORCA/bin/x64/Release/*.msi
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
