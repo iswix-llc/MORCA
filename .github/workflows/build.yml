@@ -16,8 +16,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  windows:
+  app:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,11 +70,62 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
+      - name: Upload signed app
+        uses: actions/upload-artifact@v4
+        with:
+          name: MORCA-app
+          path: Installer/Deploy/App
+          if-no-files-found: error
+
+  # The MSI is built on Linux with the managed WiX backend (IsWiX.WixToolset.Sdk).
+  msi:
+    needs: app
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.app.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download signed app
+        uses: actions/download-artifact@v4
+        with:
+          name: MORCA-app
+          path: Installer/Deploy/App
+
       - name: Build MSI
         run: >
-          dotnet build Installer/MORCA/MORCA.wixproj
+          dotnet build Installer/MORCA/MORCA.iswixproj
           -c Release -p:Platform=x64
-          -p:MSIProductVersion=${{ steps.version.outputs.version }}
+          -p:MSIProductVersion=${{ needs.app.outputs.version }}
+
+      - name: Upload unsigned MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: MORCA-msi-unsigned
+          path: Installer/MORCA/bin/x64/Release/*.msi
+          if-no-files-found: error
+
+  # Authenticode signing needs Windows, so only this small job leaves Linux.
+  sign-release:
+    needs: [app, msi]
+    runs-on: windows-latest
+    steps:
+      - name: Download unsigned MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: MORCA-msi-unsigned
+          path: msi
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign MSI
         uses: azure/artifact-signing-action@v2
@@ -80,7 +133,7 @@ jobs:
           endpoint: ${{ vars.SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}/Installer/MORCA/bin/x64/Release
+          files-folder: ${{ github.workspace }}/msi
           files-folder-filter: msi
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
@@ -89,15 +142,15 @@ jobs:
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MORCA-msi-${{ steps.version.outputs.version }}
-          path: Installer/MORCA/bin/x64/Release/*.msi
+          name: MORCA-msi-${{ needs.app.outputs.version }}
+          path: msi/*.msi
           if-no-files-found: error
 
       - name: Draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: Installer/MORCA/bin/x64/Release/*.msi
+          files: msi/*.msi
 
   android:
     runs-on: ubuntu-latest
